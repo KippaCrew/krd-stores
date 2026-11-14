@@ -4,9 +4,10 @@ A phone app for the Kippa Ring Depot crew. Use it for the store room (it replace
 
 - **Staff** tap their name, enter a 4-digit PIN, tap **+** on what they take, then **Log**. That takes about 10 seconds.
 - **You (manager)** get par-level reorder emails, a 7am daily summary, blind stocktakes on your phone, reports, team chat and a **TRACKS entry** sheet that totals everything you still need to key into TRACKS.
+- **Uniform collections:** when TRACKS dispatches a uniform order to Kippa Ring, a ticket appears here. Tick it when the parcel arrives and the person gets a "ready to collect" notification.
 - **TOI Broadcasts** send notices to everyone, with PDFs and photos attached. They can be marked urgent (a pop-up appears) and can ask for a "read & understood" acknowledgement, so you can see who has acknowledged.
 
-It's free to run: GitHub Pages hosts the app, Supabase stores the data and Resend sends the emails. It's completely separate from QR systems.
+It's free to run: GitHub Pages hosts the app, Supabase stores the data and Resend sends the emails. It's separate from QR systems. The only connection is optional and one-way: TRACKS can **send** Kippa Crew a uniform order number and name (see section 7). Kippa Crew can't see or change anything in TRACKS.
 
 ```
  Phone (staff / manager)                     Supabase (your free account, Sydney)
@@ -128,6 +129,24 @@ If a test notification doesn't arrive, check that "Verify JWT" is off and press 
 
 ---
 
+## 7. TRACKS link: uniform orders (about 5 minutes, optional)
+
+When the uniform store sets an order to **Dispatched to Depot** for Kippa Ring, TRACKS tells Kippa Crew. A ticket appears under **Uniform collections** with the person's name, order number and item count. When the parcel arrives, tap **It's arrived**. The person gets a notification (and a banner in the app) saying it's ready to collect. When they pick it up, tap **Handed over**, or they can tap **I've picked it up** themselves.
+
+**a) Run the new `supabase/schema.sql`** in the SQL Editor (as for any update).
+
+**b) Turn it on in Kippa Crew.** Go to **More → Settings → 👕 TRACKS link → Turn on TRACKS link**. It shows a small block of code with your link key. Press **Copy**.
+
+**c) Paste it into TRACKS.** Use the supplied `admin.aspx`, which already has the TRACKS side added. Find `KIPPA_CREW:` near the top (inside `var CONFIG = {`), replace that whole block with what you copied, and upload `admin.aspx` back to SharePoint.
+
+**d) Test it.** Dispatch a test order to Kippa Ring in TRACKS. The TRACKS message should end with "Kippa Crew has been told", and Settings should show **✅ Last heard from TRACKS**.
+
+**Matching people.** Add each person's **Service no.** under **Staff**, because that's what TRACKS sends. If there's no service number, Kippa Crew matches on the exact name (it understands "Quirk, Keith"). If neither matches, the ticket says **Choose person**. Adding the service number later links any waiting tickets automatically.
+
+**What TRACKS sends:** order number, the person's name and service number, the depot and the number of items. It sends nothing else, and only for orders going to the depots in `DEPOTS`. If an order is cancelled in TRACKS, its open ticket is closed. If Kippa Crew can't be reached, TRACKS still saves the status normally and warns that you'll need to add it by hand (**Uniform collections → + Add**).
+
+---
+
 ## How things work
 
 | Feature | Details |
@@ -144,6 +163,7 @@ If a test notification doesn't arrive, check that "Verify JWT" is off and press 
 | **Positions, unions & groups** | Each person has a **Union affiliation**: **None** (default), **RTBU** or **AFULE**. RTBU and AFULE members are put in that union's chat automatically, whatever their position, and the union's logo is the chat icon. Changing the affiliation moves them; None means no union chat. Each person is also a **Driver**, **Guard** or **Other**. Drivers are put in the **Drivers** chat and Guards in the **Guards** chat automatically, and changing their position moves them. Managers aren't added unless their own position is Driver or Guard. Anyone can make their own group under **Messages → Chat → New group**. Only members can see a group. The person who made it, or a manager in it, can rename it, change its members or delete it. |
 | **What's New** | Go to **More → What's New**, write a title and points (one per line), or tap **Fill in this version's app changes**. Then **Preview** and **Post to everyone**. Each person sees it as a pop-up once and taps **Got it**. You can see "Seen by X of Y". |
 | **Someone leaves the depot** | Go to **Staff → their name → Remove (left depot)**. They're signed out straight away, disappear from the sign-in list, chats and groups, and stop counting in read receipts. Their history stays in reports and TRACKS. You can bring them back from **Former staff**. |
+| **Uniform collections** | Managers and Administrators: **Home → Uniforms** or **More → Uniform collections**. **To do** lists *Waiting for pickup* and *On the way*; tap **It's arrived** to notify the person, then **Handed over**. Both have an undo. An order not here after 7 days is flagged red, and the 7am email lists orders to chase. People are reminded after 2 days if they haven't collected (at most 3 reminders). The **Collected** tab has a **Marked Collected in TRACKS** switch so you know what still needs updating in TRACKS. Use **+ Add** for anything TRACKS didn't send. Staff see their orders under **Me → My uniform orders**. |
 | **Chat** | The **Team** channel is for everyone. Staff can message managers directly, and managers can message anyone. Unread messages show as red badges. |
 | **Roles** | **Staff:** take items, see their own history, read broadcasts, chat, change their PIN. **Administrator:** everything Staff can do, plus receive deliveries, run stocktakes, manage Staff & Administrators (not Managers), send **Depot Announcements** and share the app link. Administrators don't see stock levels, Items & par levels, Import, Reports, TRACKS entry, What's New posting or Settings. **Manager:** everything, and sends **TOI Broadcasts**. Only a Manager can make someone a Manager. |
 
@@ -155,6 +175,7 @@ If a test notification doesn't arrive, check that "Verify JWT" is off and press 
 - Anyone signed in with a default or reset PIN can't do anything until they've chosen their own. The database enforces this, not just the screen.
 - Sessions last 120 days on that phone. Signing out, deactivating someone or resetting their PIN ends their sessions.
 - Staff never see stock quantities, and only managers can see everyone's activity.
+- TRACKS uses a separate **link key** that can only create or cancel uniform tickets. It can't read anything. If the key ever gets out, use **Settings → TRACKS link → Make a new key** and paste the new code into TRACKS.
 
 ## Looking after it
 

@@ -6,14 +6,12 @@
   'use strict';
 
   var api = window.KRDApi;
-  var APP_VERSION = '1.1';
+  var APP_VERSION = '1.2';
   // Changes in this version of the app, offered when writing a "What's New" update.
   var APP_CHANGES = [
-    'Kippa Crew: the depot app has a new name and logo',
-    'Item photos: tap a photo on the Take screen to see it bigger',
-    'Group chats: Messages → Chat → New group to make your own',
-    'Drivers & Guards chats: you\'re added automatically based on your position',
-    'What\'s New: updates like this one will pop up here — tap "Got it" once you\'ve read it'
+    'Uniform orders: when the uniform store sends your order to Kippa Ring, you\'ll get a notification as soon as it arrives',
+    'See your uniform orders any time under Me → My uniform orders, and tap "I\'ve picked it up" when you collect it',
+    'Union chats: RTBU and AFULE members are added to their union\'s chat automatically'
   ];
   var $app = document.getElementById('app');
   var $nav = document.getElementById('bottomNav');
@@ -156,6 +154,7 @@
     megaphone: ico('<path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/>'),
     clip: ico('<path d="M21 11.5l-8.5 8.5a5 5 0 0 1-7-7L14 4.5a3.3 3.3 0 0 1 4.7 4.7L10.2 17.7a1.7 1.7 0 0 1-2.4-2.4L15.5 7.6"/>'),
     pdf: ico('<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M8 15h1.5a1.5 1.5 0 0 0 0-3H8v5"/><path d="M13 12v5h1a2 2 0 0 0 2-2v-1a2 2 0 0 0-2-2z"/>'),
+    shirt: ico('<path d="M8 3L3 6l2 4 3-1v12h8V9l3 1 2-4-5-3a4 4 0 0 1-8 0z"/>'),
     camera: ico('<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>')
   };
 
@@ -246,20 +245,20 @@
       { href: '#/stock', label: 'Stock', icon: I.stock, match: /^#\/(stock|import)/, dot: S.pulse.low },
       { href: '#/count', label: 'Count', icon: I.count, match: /^#\/count/ },
       { href: '#/messages', label: 'Messages', icon: I.chat, match: /^#\/(chat|messages|broadcast)/, dot: (S.pulse.unread || 0) + (S.pulse.broadcasts || 0) },
-      { href: '#/more', label: 'More', icon: I.more, match: /^#\/(more|receive|reports|tracks|staff|settings|share|me|history|whatsnew)/ }
+      { href: '#/more', label: 'More', icon: I.more, match: /^#\/(more|receive|reports|tracks|staff|settings|share|me|history|whatsnew|uniforms|my-uniforms)/ }
     ];
     if (isAdministrator()) return [
       { href: '#/', label: 'Home', icon: I.home, match: /^#\/?$/ },
       { href: '#/take', label: 'Take', icon: I.take, match: /^#\/take/ },
       { href: '#/count', label: 'Count', icon: I.count, match: /^#\/count/ },
       { href: '#/messages', label: 'Messages', icon: I.chat, match: /^#\/(chat|messages|broadcast)/, dot: (S.pulse.unread || 0) + (S.pulse.broadcasts || 0) },
-      { href: '#/more', label: 'More', icon: I.more, match: /^#\/(more|receive|staff|share|me|history|whatsnew)/ }
+      { href: '#/more', label: 'More', icon: I.more, match: /^#\/(more|receive|staff|share|me|history|whatsnew|uniforms|my-uniforms)/ }
     ];
     return [
       { href: '#/take', label: 'Take', icon: I.take, match: /^#\/(take)?\/?$/ },
       { href: '#/history', label: 'My history', icon: I.history, match: /^#\/history/ },
       { href: '#/messages', label: 'Messages', icon: I.chat, match: /^#\/(chat|messages|broadcast)/, dot: (S.pulse.unread || 0) + (S.pulse.broadcasts || 0) },
-      { href: '#/me', label: 'Me', icon: I.me, match: /^#\/(me|whatsnew)/ }
+      { href: '#/me', label: 'Me', icon: I.me, match: /^#\/(me|whatsnew|my-uniforms)/, dot: S.pulse.uniforms_ready }
     ];
   }
   function renderNav() {
@@ -301,7 +300,9 @@
     [/^#\/reports$/, function () { return adminOnly(viewReports); }],
     [/^#\/tracks$/, function () { return adminOnly(viewTracks); }],
     [/^#\/staff$/, function () { return officeOnly(viewStaff); }],
-    [/^#\/settings$/, function () { return adminOnly(viewSettings); }]
+    [/^#\/settings(?:#tracks)?$/, function () { return adminOnly(viewSettings); }],
+    [/^#\/uniforms(\/done)?$/, function (m) { return officeOnly(function () { return viewUniforms(!!m[1]); }); }],
+    [/^#\/my-uniforms$/, function () { return viewMyUniforms(); }]
   ];
   function adminOnly(fn) { if (!isAdmin()) { location.hash = isOffice() ? '#/' : '#/take'; return; } return fn(); }
   function officeOnly(fn) { if (!isOffice()) { location.hash = '#/take'; return; } return fn(); }
@@ -954,6 +955,7 @@
         (ios ? '<p class="mb-0">In <b>Safari</b>, tap the <b>Share</b> button (square with an arrow), then <b>Add to Home Screen</b>.</p>'
              : '<p class="mb-0">In <b>Chrome</b>, tap the <b>⋮</b> menu, then <b>Install app</b> or <b>Add to Home screen</b>.</p>') +
         '<p class="small text-muted mt-2 mb-0">It then opens like a normal app, and you stay signed in.</p></div></div>' +
+      '<a class="list-row mb-2" style="border:1px solid var(--qr-line);border-radius:.5rem" href="#/my-uniforms"><span style="width:26px;color:var(--qr-light-blue)">' + I.shirt + '</span><div class="grow"><div class="ttl">My uniform orders' + (S.pulse.uniforms_ready ? ' <span class="badge bg-danger">' + S.pulse.uniforms_ready + ' ready</span>' : '') + '</div><div class="sub">Orders sent to the depot for you</div></div><span class="text-muted">›</span></a>' +
       '<a class="list-row mb-3" style="border:1px solid var(--qr-line);border-radius:.5rem" href="#/whatsnew"><span style="width:26px;color:var(--qr-light-blue)">' + I.megaphone + '</span><div class="grow"><div class="ttl">What\'s New</div><div class="sub">Past updates and changes</div></div><span class="text-muted">›</span></a>' +
       (api.isDemo ? '<div class="card mb-3"><div class="card-header">Demo mode</div><div class="card-body"><p>This is a demo running only on this device. Nothing is shared.</p>' +
         '<button class="btn btn-outline-danger" id="resetDemo">Reset demo data</button></div></div>' : '') +
@@ -1002,7 +1004,8 @@
         '<a class="action" href="#/receive">' + I.truck + 'Receive delivery</a>' +
         '<a class="action" href="#/count">' + I.count + 'Stocktake</a>' +
         '<a class="action" href="#/tracks">' + I.export + 'TRACKS entry</a>' +
-        '<a class="action" href="#/broadcasts/new" style="grid-column:1/-1">' + I.megaphone + 'Send a TOI broadcast</a>' +
+        '<a class="action" href="#/broadcasts/new">' + I.megaphone + 'TOI broadcast</a>' +
+        uniAction(d.uniforms_open) +
       '</div>' +
       '<div class="card mb-3"><div class="card-header d-flex justify-content-between align-items-center"><span>Reorder list</span>' +
         (d.low.length ? '<span class="d-flex gap-1"><button class="btn btn-sm btn-outline-primary" id="copyOrder">' + 'Copy</button><button class="btn btn-sm btn-outline-primary" id="csvOrder">CSV</button></span>' : '') + '</div>' +
@@ -1031,9 +1034,11 @@
   // ------------------------------------------------------------------
   //  ADMINISTRATOR HOME & SHARE THE APP
   // ------------------------------------------------------------------
+  function uniAction(n) { return '<a class="action" href="#/uniforms">' + I.shirt + 'Uniforms' + (n ? ' <span class="badge bg-danger ms-1">' + n + '</span>' : '') + '</a>'; }
   async function viewOfficeHome() {
     loading();
     var st = await call('list_stocktakes');
+    try { S.pulse = await call('heartbeat', null, { bg: true }); } catch (_) {}
     var open = st.find(function (x) { return x.status === 'open'; });
     render('<div id="bcBanner"></div><div id="pushPrompt"></div>' +
       '<div class="page-title"><h4>G\'day, ' + esc(S.me.name.split(' ')[0]) + '</h4><span class="small text-muted">' + esc(fmtDay(new Date().toISOString())) + '</span></div>' +
@@ -1043,7 +1048,8 @@
         '<a class="action" href="#/receive">' + I.truck + 'Receive delivery</a>' +
         '<a class="action" href="#/count">' + I.count + 'Stocktake</a>' +
         '<a class="action" href="#/staff">' + I.users + 'Staff</a>' +
-        '<a class="action" href="#/broadcasts/new" style="grid-column:1/-1">' + I.megaphone + 'Send a Depot Announcement</a>' +
+        '<a class="action" href="#/broadcasts/new">' + I.megaphone + 'Depot Announcement</a>' +
+        uniAction(S.pulse.uniforms_open) +
       '</div>' +
       '<div class="list"><a class="list-row" href="#/share"><span style="width:26px;color:var(--qr-light-blue)">' + I.export + '</span><div class="grow"><div class="ttl">Share the app</div><div class="sub">Send the link to the crew</div></div><span class="text-muted">›</span></a></div>');
     paintBroadcastBanner(); paintPushPrompt();
@@ -1078,6 +1084,7 @@
         '<div class="list mb-3">' +
           row('#/broadcasts/new', I.megaphone, 'Send a Depot Announcement', 'A notice to everyone, with PDFs & photos') +
           row('#/receive', I.truck, 'Receive a delivery', 'Add stock that has arrived') +
+          row('#/uniforms', I.shirt, 'Uniform collections', 'Orders from TRACKS coming to the depot') +
           row('#/count', I.count, 'Stocktake', 'Blind count of the store room') +
         '</div><div class="list mb-3">' +
           row('#/staff', I.users, 'Staff', 'Add people, reset PINs') +
@@ -1091,6 +1098,7 @@
       '<div class="list mb-3">' +
         row('#/broadcasts', I.megaphone, 'TOI Broadcasts', 'Notices to everyone, with PDFs & photos') +
         row('#/receive', I.truck, 'Receive a delivery', 'Add stock that has arrived') +
+        row('#/uniforms', I.shirt, 'Uniform collections', 'Orders from TRACKS coming to the depot') +
         row('#/tracks', I.export, 'TRACKS entry', 'Everything taken since you last entered it') +
         row('#/reports', I.chart, 'Reports', 'Usage by item and by person, CSV export') +
         row('#/stock', I.stock, 'Items & par levels', 'Add, edit, adjust stock') +
@@ -1099,7 +1107,7 @@
         row('#/staff', I.users, 'Staff', 'Add people, reset PINs') +
         row('#/whatsnew', I.megaphone, 'What\'s New', 'Post app updates & notes everyone sees once') +
         row('#/share', I.export, 'Share the app', 'Send the link to the crew') +
-        row('#/settings', I.gear, 'Settings', 'Reorder emails and daily summary') +
+        row('#/settings', I.gear, 'Settings', 'Emails, notifications, TRACKS link') +
         row('#/history', I.history, 'My takes', 'What you have logged yourself') +
         row('#/me', I.me, 'My account', 'Change PIN, sign out, install app') +
       '</div>');
@@ -1627,7 +1635,8 @@
     var w = sheet({
       title: isNew ? 'Add person' : 'Edit ' + p.name,
       body: '<form id="pForm" class="row g-3">' +
-        '<div class="col-12"><label class="form-label" for="pName">Name</label><input class="form-control" id="pName" required value="' + esc(p.name) + '" autocomplete="off"><div class="form-text">As it should appear on the sign-in screen.</div></div>' +
+        '<div class="col-7"><label class="form-label" for="pName">Name</label><input class="form-control" id="pName" required value="' + esc(p.name) + '" autocomplete="off"><div class="form-text">As shown on the sign-in screen</div></div>' +
+        '<div class="col-5"><label class="form-label" for="pSn">Service no. <span class="text-muted">(optional)</span></label><input class="form-control" id="pSn" maxlength="30" inputmode="numeric" value="' + esc(p.service_number || '') + '" autocomplete="off"><div class="form-text">Matches TRACKS uniform orders</div></div>' +
         '<div class="col-6"><label class="form-label" for="pPos">Position</label><select class="form-select" id="pPos">' +
           [['driver', 'Driver'], ['guard', 'Guard'], ['other', 'Other']].map(function (o) { return '<option value="' + o[0] + '"' + ((p.position || (isNew ? '' : 'other')) === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
           '</select><div class="form-text">Puts them in the Drivers or Guards chat</div></div>' +
@@ -1681,13 +1690,210 @@
       if (!qs('#pForm', w).reportValidity()) return;
       var pinEl = qs('#pPin', w), pin = pinEl ? pinEl.value.trim() : '', name = qs('#pName', w).value.trim();
       try {
-        var res = await call('save_staff', { p_person: { id: isNew ? null : p.id, name: name, role: qs('#pRole', w).value, active: qs('#pActive', w).checked, can_broadcast: qs('#pBc', w).checked, position: qs('#pPos', w).value, union_affiliation: qs('#pUnion', w).value, pin: pin || null } });
+        var res = await call('save_staff', { p_person: { id: isNew ? null : p.id, name: name, role: qs('#pRole', w).value, active: qs('#pActive', w).checked, can_broadcast: qs('#pBc', w).checked, position: qs('#pPos', w).value, union_affiliation: qs('#pUnion', w).value, service_number: qs('#pSn', w).value.trim(), pin: pin || null } });
         closeSheet();
         if (isNew) {
           sheet({ title: name + ' added', body: '<p>Send <b>' + esc(name) + '</b> the app link and tell them to sign in with:</p><p class="display-5 fw-bold text-center" style="letter-spacing:.3em;color:var(--qr-dark-blue)">' + esc(res.pin || pin) + '</p>' +
             '<p class="small text-muted mb-0">The first time they sign in, they\'ll choose their own PIN.</p>', foot: '<button class="btn btn-primary" data-close>Done</button>', onClose: route });
         } else { toast('Saved'); route(); }
       } catch (err) { errToast(err); }
+    });
+  }
+
+  // ------------------------------------------------------------------
+  //  UNIFORM COLLECTIONS — tickets TRACKS sends when an order is
+  //  dispatched to Kippa Ring. Office ticks "arrived", the person is
+  //  notified, then it's handed over.
+  // ------------------------------------------------------------------
+  function uniWho(t) { return t.staff_name || t.person_name || 'Unknown person'; }
+  function uniItems(n) { return n == null ? '' : ' · ' + plural(n, 'item'); }
+  function uniBadge(st) {
+    return { in_transit: '<span class="badge bg-warning">On its way</span>', arrived: '<span class="badge bg-primary">Waiting for pickup</span>',
+             collected: '<span class="badge bg-success">Collected</span>', cancelled: '<span class="badge bg-secondary">Cancelled</span>' }[st] || '';
+  }
+  function daysSince(iso) { return Math.floor((Date.now() - new Date(iso).getTime()) / 86400000); }
+  function uniCardHtml(t) {
+    var detail = '', acts = '';
+    if (t.status === 'in_transit') {
+      var age = daysSince(t.created_at);
+      detail = (t.source === 'manual' ? 'Added by hand ' : 'Sent by TRACKS ') + esc(when(t.created_at)) +
+        (t.tracks_updates > 1 ? ' · updated ' + plural(t.tracks_updates - 1, 'time') : '') +
+        (age >= 7 ? '<div class="text-danger fw-bold mt-1">Still not here after ' + age + ' days — check with the uniform store.</div>' : '');
+      acts = '<button class="btn btn-primary" data-u-arrived="' + t.id + '">' + I.check.replace('<svg', '<svg width="18" height="18"') + ' It\'s arrived</button>' +
+             '<button class="btn btn-link btn-sm text-muted ms-auto" data-u-close="' + t.id + '">Close ticket</button>';
+    } else if (t.status === 'arrived') {
+      detail = 'Arrived ' + esc(when(t.arrived_at)) + (t.arrived_by_name ? ' · ticked by ' + esc(t.arrived_by_name) : '') +
+        (!t.staff_id ? '' : t.push_on ? '<div class="text-success mt-1">📲 ' + esc(uniWho(t).split(' ')[0]) + ' has been sent a notification.</div>'
+                                      : '<div class="mt-1" style="color:#9a4a10">' + esc(uniWho(t).split(' ')[0]) + ' doesn\'t have notifications on — they\'ll see it next time they open the app. You may want to tell them too.</div>');
+      acts = '<button class="btn btn-primary" data-u-collected="' + t.id + '">Handed over</button>' +
+             '<button class="btn btn-outline-secondary btn-sm ms-auto" data-u-undo="' + t.id + '">Undo arrived</button>';
+    } else if (t.status === 'collected') {
+      detail = 'Collected ' + esc(when(t.collected_at)) + (t.collected_self ? ' · ' + esc(uniWho(t).split(' ')[0]) + ' confirmed in the app' : t.collected_by_name ? ' · handed over by ' + esc(t.collected_by_name) : '');
+      acts = '<div class="form-check form-switch mb-0"><input class="form-check-input" type="checkbox" role="switch" id="ut' + t.id + '" data-u-tracks="' + t.id + '"' + (t.tracks_done ? ' checked' : '') + '>' +
+             '<label class="form-check-label small" for="ut' + t.id + '">Marked <b>Collected</b> in TRACKS</label></div>' +
+             '<button class="btn btn-link btn-sm text-muted ms-auto" data-u-reopen="' + t.id + '">Undo</button>';
+    } else {
+      detail = esc(t.note || 'Closed') + ' · ' + esc(when(t.updated_at));
+    }
+    return '<div class="card mb-2"><div class="card-body py-2">' +
+      '<div class="d-flex justify-content-between align-items-start gap-2"><div><div class="fw-bold fs-6">' + esc(uniWho(t)) + '</div>' +
+        '<div class="small text-muted">Order <b style="color:var(--qr-ink)">' + esc(t.order_number) + '</b>' + uniItems(t.items) + (t.service_number ? ' · #' + esc(t.service_number) : '') + '</div></div>' + uniBadge(t.status) + '</div>' +
+      '<div class="small mt-1">' + detail + '</div>' +
+      (!t.staff_id && (t.status === 'in_transit' || t.status === 'arrived')
+        ? '<div class="alert alert-warning py-2 px-2 small mt-2 mb-0 d-flex align-items-center gap-2"><span class="flex-grow-1">' + (t.person_name ? '"' + esc(t.person_name) + '" isn\'t matched to anyone in Kippa Crew' : 'Not matched to anyone in Kippa Crew') + ', so no one will be notified.</span>' +
+          '<button class="btn btn-sm btn-outline-dark" data-u-link="' + t.id + '">Choose person</button></div>' : '') +
+      (acts ? '<div class="d-flex align-items-center gap-2 mt-2">' + acts + '</div>' : '') +
+      '</div></div>';
+  }
+  async function viewUniforms(done) {
+    loading();
+    var d = await call('list_uniform_orders', { p_done: !!done });
+    S.pulse.uniforms_open = d.open; renderNav();
+    var list = d.tickets;
+    var waiting = list.filter(function (t) { return t.status === 'arrived'; }), coming = list.filter(function (t) { return t.status === 'in_transit'; });
+    render('<div class="page-title"><h4>Uniform collections</h4><button class="btn btn-primary" id="uAdd">+ Add</button></div>' +
+      '<div class="seg"><a href="#/uniforms" class="' + (done ? '' : 'active') + '">To do (' + d.open + ')</a><a href="#/uniforms/done" class="' + (done ? 'active' : '') + '">Collected' +
+        (d.tracks_todo ? ' <span class="badge bg-warning">' + d.tracks_todo + '</span>' : '') + '</a></div>' +
+      (!d.linked ? '<div class="alert alert-info small">TRACKS isn\'t connected yet, so orders only show here when you add them. ' +
+        (isAdmin() ? '<a href="#/settings#tracks">Connect TRACKS</a>' : 'Ask a manager to connect it in Settings.') + '</div>' : '') +
+      (api.isDemo && !done ? '<button class="btn btn-outline-secondary btn-sm mb-3" id="uSim">Demo: pretend TRACKS just dispatched an order</button>' : '') +
+      (done
+        ? (d.tracks_todo ? '<div class="alert alert-warning d-flex align-items-center gap-2"><span class="flex-grow-1">' + plural(d.tracks_todo, 'order') + ' still to mark as <b>Collected</b> in TRACKS.</span><button class="btn btn-sm btn-dark" id="uTracksAll">All done</button></div>' : '') +
+          (list.length ? list.map(uniCardHtml).join('') : '<div class="empty">Nothing collected yet.</div>')
+        : (waiting.length ? '<div class="section-title">Waiting for pickup (' + waiting.length + ')</div>' + waiting.map(uniCardHtml).join('') : '') +
+          (coming.length ? '<div class="section-title">On the way to the depot (' + coming.length + ')</div>' + coming.map(uniCardHtml).join('') : '') +
+          (!list.length ? '<div class="empty">No uniform orders on the way.<br><span class="small">When the uniform store dispatches an order to Kippa Ring, it appears here.</span></div>' : '')));
+
+    async function act(fn, args, msg) {
+      try { var r = await call(fn, args); if (msg) toast(typeof msg === 'function' ? msg(r) : msg); viewUniforms(done); }
+      catch (err) { errToast(err); }
+    }
+    function find(id) { return list.find(function (t) { return t.id === +id; }); }
+    on($app, 'click', '[data-u-arrived]', function (e, b) {
+      b.disabled = true;
+      act('uniform_set_status', { p_id: +b.getAttribute('data-u-arrived'), p_status: 'arrived' }, function (r) {
+        return !r.staff_id ? 'Ticked as arrived. Choose who it\'s for so they get told.'
+             : r.notified && r.push_on ? '📲 ' + uniWho(r) + ' has been told it\'s ready to collect'
+             : 'Ticked. ' + uniWho(r) + ' will see it when they open the app';
+      });
+    });
+    on($app, 'click', '[data-u-collected]', function (e, b) { b.disabled = true; act('uniform_set_status', { p_id: +b.getAttribute('data-u-collected'), p_status: 'collected' }, 'Marked as collected ✓ — remember TRACKS'); });
+    on($app, 'click', '[data-u-undo]', function (e, b) { act('uniform_set_status', { p_id: +b.getAttribute('data-u-undo'), p_status: 'in_transit' }, 'Put back to "on its way"'); });
+    on($app, 'click', '[data-u-reopen]', function (e, b) { act('uniform_set_status', { p_id: +b.getAttribute('data-u-reopen'), p_status: 'arrived' }, 'Back to waiting for pickup'); });
+    on($app, 'change', '[data-u-tracks]', function (e, b) { act('uniform_tracks_done', { p_ids: [+b.getAttribute('data-u-tracks')], p_done: b.checked }); });
+    on($app, 'click', '[data-u-close]', async function (e, b) {
+      var t = find(b.getAttribute('data-u-close'));
+      if (!(await confirmSheet('Close this ticket?', '<p>Order <b>' + esc(t.order_number) + '</b> for <b>' + esc(uniWho(t)) + '</b> will be marked as cancelled. Use this if it was sent here by mistake or won\'t be coming.</p>', 'Close ticket', true))) return;
+      act('uniform_set_status', { p_id: t.id, p_status: 'cancelled' }, 'Ticket closed');
+    });
+    on($app, 'click', '[data-u-link]', function (e, b) { uniLinkPerson(find(b.getAttribute('data-u-link')), function () { viewUniforms(done); }); });
+    var ta = qs('#uTracksAll');
+    if (ta) ta.addEventListener('click', function () {
+      act('uniform_tracks_done', { p_ids: list.filter(function (t) { return t.status === 'collected' && !t.tracks_done; }).map(function (t) { return t.id; }), p_done: true }, 'All marked as done in TRACKS');
+    });
+    qs('#uAdd').addEventListener('click', function () { uniAdd(function () { location.hash = '#/uniforms'; viewUniforms(false); }); });
+    var sim = qs('#uSim');
+    if (sim) sim.addEventListener('click', function () { act('demo_simulate_tracks', {}, '🚚 TRACKS sent an order (demo)'); });
+  }
+  async function uniPeopleOptions(selected) {
+    var people = (await call('list_staff')).filter(function (p) { return p.active; });
+    return '<option value="">Choose…</option>' + people.map(function (p) {
+      return '<option value="' + p.id + '"' + (p.id === selected ? ' selected' : '') + '>' + esc(p.name) + (p.service_number ? ' (#' + esc(p.service_number) + ')' : '') + '</option>';
+    }).join('');
+  }
+  async function uniLinkPerson(t, done) {
+    var opts = await uniPeopleOptions(t.staff_id);
+    var w = sheet({ title: 'Who is order ' + t.order_number + ' for?',
+      body: (t.person_name ? '<p class="small text-muted">TRACKS says: <b>' + esc(t.person_name) + '</b>' + (t.service_number ? ', service number <b>' + esc(t.service_number) + '</b>' : '') + '</p>' : '') +
+        '<label class="form-label" for="ulP">Person</label><select class="form-select" id="ulP">' + opts + '</select>' +
+        '<div class="form-text">Tip: add their service number in <b>Staff</b> and future orders will match them automatically.</div>',
+      foot: '<button class="btn btn-outline-secondary" data-close>Cancel</button><button class="btn btn-primary" id="ulSave">Save</button>' });
+    qs('#ulSave', w).addEventListener('click', async function () {
+      var v = qs('#ulP', w).value; if (!v) { qs('#ulP', w).focus(); return; }
+      try { var r = await call('uniform_link_person', { p_id: t.id, p_staff_id: v }); closeSheet();
+            toast(r.notified ? (r.push_on ? '📲 ' + r.staff_name + ' has been told it\'s ready' : 'Saved — ' + r.staff_name + ' will see it in the app') : 'Saved'); done(); }
+      catch (err) { errToast(err); }
+    });
+  }
+  async function uniAdd(done) {
+    var opts = await uniPeopleOptions(null);
+    var w = sheet({ title: 'Add a uniform order',
+      body: '<p class="small text-muted">For an order TRACKS didn\'t send (or anything else coming to the depot for someone).</p><form id="uaForm" class="row g-3">' +
+        '<div class="col-7"><label class="form-label" for="uaO">Order number</label><input class="form-control" id="uaO" required maxlength="40" autocomplete="off"></div>' +
+        '<div class="col-5"><label class="form-label" for="uaN">Items <span class="text-muted">(optional)</span></label><input class="form-control" id="uaN" type="number" min="0" max="999" inputmode="numeric"></div>' +
+        '<div class="col-12"><label class="form-label" for="uaP">For</label><select class="form-select" id="uaP" required>' + opts + '</select></div>' +
+        '<div class="col-12"><label class="form-label" for="uaNote">Note <span class="text-muted">(optional)</span></label><input class="form-control" id="uaNote" maxlength="300"></div></form>',
+      foot: '<button class="btn btn-outline-secondary" data-close>Cancel</button><button class="btn btn-primary" id="uaSave">Add</button>' });
+    qs('#uaSave', w).addEventListener('click', async function () {
+      if (!qs('#uaForm', w).reportValidity()) return;
+      try { await call('uniform_add', { p_order: qs('#uaO', w).value.trim(), p_staff_id: qs('#uaP', w).value, p_items: int(qs('#uaN', w).value), p_note: qs('#uaNote', w).value.trim() || null });
+            closeSheet(); toast('Added — tick it when it arrives'); done(); }
+      catch (err) { errToast(err); }
+    });
+  }
+  async function viewMyUniforms() {
+    loading();
+    var list = await call('my_uniform_orders');
+    render('<div class="page-title"><h4>My uniform orders</h4></div>' +
+      (list.length ? list.map(function (t) {
+        var body = t.status === 'arrived'
+          ? '<div class="fw-bold text-success fs-5 mb-1">📦 Ready to collect</div><div class="small mb-2">Arrived at Kippa Ring Depot ' + esc(when(t.arrived_at)) + '.</div>' +
+            '<button class="btn btn-primary w-100" data-got="' + t.id + '">I\'ve picked it up</button>'
+          : t.status === 'in_transit'
+          ? '<div class="fw-bold mb-1" style="color:#9a4a10">🚚 On its way to the depot</div><div class="small text-muted">Sent ' + esc(when(t.created_at)) + '. You\'ll get a notification when it arrives.</div>'
+          : '<div class="fw-bold text-muted mb-1">✓ Collected</div><div class="small text-muted">' + esc(when(t.collected_at)) + '</div>';
+        return '<div class="card mb-2"' + (t.status === 'arrived' ? ' style="border:2px solid var(--qr-light-blue)"' : '') + '><div class="card-body">' +
+          '<div class="small text-muted mb-1">Uniform order <b style="color:var(--qr-ink)">' + esc(t.order_number) + '</b>' + uniItems(t.items) + '</div>' + body + '</div></div>';
+      }).join('') : '<div class="empty">No uniform orders coming to the depot for you right now.<br><span class="small">When the uniform store sends one to Kippa Ring, it shows here and you\'ll get a notification when it arrives.</span></div>'));
+    on($app, 'click', '[data-got]', async function (e, b) {
+      b.disabled = true;
+      try { await call('uniform_got_it', { p_id: +b.getAttribute('data-got') }); toast('Thanks — marked as collected'); pulse(); viewMyUniforms(); }
+      catch (err) { b.disabled = false; errToast(err); }
+    });
+  }
+
+  // Settings > TRACKS link (Managers)
+  function tracksCode(key) {
+    var c = window.KRD_CONFIG || {};
+    return '    KIPPA_CREW: {\n' +
+           "      URL: '" + String(c.SUPABASE_URL || 'https://YOUR-PROJECT.supabase.co').replace(/\/+$/, '') + "',\n" +
+           "      ANON_KEY: '" + String(c.SUPABASE_ANON_KEY || 'YOUR-PUBLISHABLE-KEY') + "',\n" +
+           "      LINK_KEY: '" + key + "',\n" +
+           "      DEPOTS: ['Kippa Ring']\n" +
+           '    },';
+  }
+  async function paintTracksLink() {
+    var host = qs('#tracksLink'); if (!host) return;
+    var seq0 = routeSeq, t;
+    try { t = await call('tracks_link_info', null, { bg: true }); } catch (err) { host.innerHTML = ''; return; }
+    if (seq0 !== routeSeq || !document.body.contains(host)) return;
+    host.innerHTML = '<div class="card mb-3" id="tracks"><div class="card-header">👕 TRACKS link (uniform orders)</div><div class="card-body">' +
+      (!t.key
+        ? '<p>When TRACKS dispatches a uniform order to Kippa Ring Depot, it can make a ticket here with the person\'s name and order number. You tick it when it arrives, and Kippa Crew tells them it\'s ready to collect.</p>' +
+          '<p class="small text-muted">TRACKS only <b>sends</b> to Kippa Crew — Kippa Crew can\'t see or change anything in TRACKS.</p>' +
+          '<button type="button" class="btn btn-primary" id="tlOn">Turn on TRACKS link</button>'
+        : '<p class="mb-2">' + (t.last_seen ? '✅ Last heard from TRACKS <b>' + esc(ago(t.last_seen)) + '</b>' + (t.last_event ? ' <span class="small text-muted">(' + esc(t.last_event) + ')</span>' : '')
+                                           : '⏳ <b>Waiting for TRACKS.</b> Nothing received yet.') + '</p>' +
+          '<p class="small mb-1">In TRACKS <code>admin.aspx</code>, find <code>KIPPA_CREW</code> near the top (in <code>var CONFIG</code>) and replace it with:</p>' +
+          '<pre class="small p-2 mb-2" style="background:#F7F6F2;border:1px solid var(--qr-line);border-radius:.4rem;white-space:pre-wrap;word-break:break-all" id="tlCode">' + esc(tracksCode(t.key)) + '</pre>' +
+          '<div class="d-flex gap-2 flex-wrap mb-2"><button type="button" class="btn btn-primary btn-sm" id="tlCopy">' + 'Copy</button>' +
+          '<button type="button" class="btn btn-outline-secondary btn-sm" id="tlNew">Make a new key</button>' +
+          '<button type="button" class="btn btn-outline-danger btn-sm" id="tlOff">Turn off</button></div>' +
+          '<p class="small text-muted mb-0">Keep the link key private. If it gets out, press <b>Make a new key</b> and paste the new code into TRACKS.</p>' +
+          (t.no_service_number ? '<div class="alert alert-light border small mt-2 mb-0">' + plural(t.no_service_number, 'person has', 'people have') + ' no service number in <a href="#/staff">Staff</a>. Orders still match by name, but a service number is more reliable.</div>' : '') +
+          (t.unmatched ? '<div class="alert alert-warning small mt-2 mb-0"><a href="#/uniforms">' + plural(t.unmatched, 'uniform order') + '</a> couldn\'t be matched to anyone.</div>' : '')) +
+      '</div></div>';
+    if (location.hash === '#/settings#tracks') host.scrollIntoView();
+    var on1 = qs('#tlOn', host), nw = qs('#tlNew', host), off = qs('#tlOff', host), cp = qs('#tlCopy', host);
+    if (on1) on1.addEventListener('click', async function () { try { await call('tracks_link_set', { p_on: true }); paintTracksLink(); } catch (err) { errToast(err); } });
+    if (cp) cp.addEventListener('click', function () { copyText(tracksCode(t.key)); });
+    if (nw) nw.addEventListener('click', async function () {
+      if (!(await confirmSheet('Make a new link key?', '<p>TRACKS will stop being able to send orders until you paste the new code into it.</p>', 'Make new key', true))) return;
+      try { await call('tracks_link_set', { p_on: true }); toast('New key made — paste the new code into TRACKS'); paintTracksLink(); } catch (err) { errToast(err); }
+    });
+    if (off) off.addEventListener('click', async function () {
+      if (!(await confirmSheet('Turn off the TRACKS link?', '<p>TRACKS won\'t be able to send uniform orders here. Tickets you already have stay.</p>', 'Turn off', true))) return;
+      try { await call('tracks_link_set', { p_on: false }); paintTracksLink(); } catch (err) { errToast(err); }
     });
   }
 
@@ -1718,6 +1924,7 @@
         '<div class="form-check form-switch mb-0"><input class="form-check-input" type="checkbox" role="switch" id="sDaily"' + (s.daily_summary ? ' checked' : '') + '><label class="form-check-label" for="sDaily"><b>Daily summary</b> at 7:00am (reorder list + what was taken yesterday)</label></div>' +
       '</div></div>' +
       pushCard +
+      '<div id="tracksLink"></div>' +
       '<div class="card mb-3"><div class="card-header">Staff sign-in</div><div class="card-body">' +
         '<label class="form-label" for="sDefPin">Default PIN for new staff & PIN resets</label><input class="form-control" id="sDefPin" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" required value="' + esc(s.default_pin || '0000') + '" style="max-width:9rem">' +
         '<div class="form-text">People sign in with this once, then must choose their own PIN.</div></div></div>' +
@@ -1742,7 +1949,7 @@
         }).join('') + '</div>' : '<div class="empty">No emails sent yet.</div>';
       } catch (err) { errToast(err); }
     }
-    log();
+    log(); paintTracksLink();
     async function connectPush(btn) {
       btn.disabled = true;
       try {
@@ -1789,8 +1996,11 @@
   function paintBroadcastBanner() {
     var el = document.getElementById('bcBanner'); if (!el) return;
     var n = S.pulse.broadcasts || 0;
-    el.innerHTML = n ? '<a href="#/broadcasts" class="alert alert-warning d-flex align-items-center gap-2 text-decoration-none mb-3" style="color:var(--qr-ink)">' +
-      '<span style="width:26px;flex:none;color:#9a4a10">' + I.megaphone + '</span><span class="flex-grow-1"><b>' + plural(n, 'new broadcast') + '</b> — tap to read</span><span>›</span></a>' : '';
+    var u = S.pulse.uniforms_ready || 0;
+    el.innerHTML = (u ? '<a href="#/my-uniforms" class="alert alert-success d-flex align-items-center gap-2 text-decoration-none mb-3" style="color:var(--qr-ink)">' +
+      '<span style="width:26px;flex:none">' + I.shirt + '</span><span class="flex-grow-1"><b>' + (u === 1 ? 'Your uniform order is' : u + ' uniform orders are') + ' ready to collect</b> at the depot</span><span>›</span></a>' : '') +
+      (n ? '<a href="#/broadcasts" class="alert alert-warning d-flex align-items-center gap-2 text-decoration-none mb-3" style="color:var(--qr-ink)">' +
+      '<span style="width:26px;flex:none;color:#9a4a10">' + I.megaphone + '</span><span class="flex-grow-1"><b>' + plural(n, 'new broadcast') + '</b> — tap to read</span><span>›</span></a>' : '');
   }
   function maybeUrgentPopup() {
     var list = (S.pulse.urgent || []).filter(function (u) { return !S.urgentShown[u.id] && location.hash !== '#/broadcast/' + u.id; });

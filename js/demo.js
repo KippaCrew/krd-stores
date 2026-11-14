@@ -4,7 +4,7 @@
 (function (global) {
   'use strict';
 
-  var KEY = 'krd_demo_v6';
+  var KEY = 'krd_demo_v7';
   var memory = null;
   var fileMem = {};   // demo attachments live in memory only (phone storage is too small for PDFs)
   var imgMem = {};    // demo item photos, same reason
@@ -21,7 +21,7 @@
 
   function seed() {
     var admin = { id: uid(), name: 'Manager (demo)', pin: '1234', role: 'admin', active: true, failed: 0, locked_until: null, last_login: null, can_broadcast: true, position: 'other' };
-    var sam = { id: uid(), name: 'Sam Smith', pin: '1111', role: 'staff', active: true, failed: 0, locked_until: null, last_login: null, position: 'driver', union_affiliation: 'rtbu' };
+    var sam = { id: uid(), name: 'Sam Smith', pin: '1111', role: 'staff', active: true, failed: 0, locked_until: null, last_login: null, position: 'driver', union_affiliation: 'rtbu', service_number: '123456' };
     var alex = { id: uid(), name: 'Alex Brown', pin: '2222', role: 'staff', active: true, failed: 0, locked_until: null, last_login: null, position: 'guard', union_affiliation: 'afule' };
     var pat = { id: uid(), name: 'Pat Admin (demo)', pin: '3333', role: 'administrator', active: true, failed: 0, locked_until: null, last_login: null, position: 'other' };
     var items = [
@@ -77,7 +77,17 @@
       bfiles: [], breads: [{ broadcast_id: 1, staff_id: admin.id, seen_at: now(), acked_at: now() }], nextB: 2, nextF: 1,
       settings: { alert_email: '', resend_api_key: '', email_from: 'Kippa Crew <onboarding@resend.dev>',
                   instant_alerts: 'true', daily_summary: 'true', app_url: '', default_pin: '0000' },
-      emails: []
+      emails: [],
+      uniforms: [
+        { id: 1, order_number: 'ORD-2026-004821', person_name: 'Smith, Sam', service_number: '123456', staff_id: sam.id, items: 3, depot: 'Kippa Ring', status: 'in_transit', source: 'tracks', note: null,
+          tracks_updates: 1, created_at: new Date(t0 - 26 * 3600000).toISOString(), updated_at: new Date(t0 - 26 * 3600000).toISOString(), tracks_done: false },
+        { id: 2, order_number: 'ORD-2026-004719', person_name: 'Brown, Alex', service_number: null, staff_id: alex.id, items: 1, depot: 'Kippa Ring', status: 'arrived', source: 'tracks', note: null,
+          tracks_updates: 1, created_at: new Date(t0 - 3 * 86400000).toISOString(), updated_at: new Date(t0 - 5 * 3600000).toISOString(),
+          arrived_at: new Date(t0 - 5 * 3600000).toISOString(), arrived_by: admin.id, notified_at: new Date(t0 - 5 * 3600000).toISOString(), tracks_done: false },
+        { id: 3, order_number: 'ORD-2026-004866', person_name: 'Jordan Lee', service_number: '778899', staff_id: null, items: 2, depot: 'Kippa Ring', status: 'in_transit', source: 'tracks', note: null,
+          tracks_updates: 1, created_at: new Date(t0 - 4 * 3600000).toISOString(), updated_at: new Date(t0 - 4 * 3600000).toISOString(), tracks_done: false }
+      ],
+      nextU: 4
     };
   }
 
@@ -188,6 +198,58 @@
       return m.recipient_id === s.id && m.id > lastRead(db, s.id, m.sender_id);
     }).length;
   }
+
+  // ---- uniform collections (mirror of schema.sql) ----
+  function normName(t) {
+    var x = String(t || '').replace(/\([^)]*\)/g, '').trim();
+    if (x.indexOf(',') >= 0) x = x.split(',')[1].trim() + ' ' + x.split(',')[0].trim();
+    return x.toLowerCase().replace(/\s+/g, ' ').trim();
+  }
+  function normSn(t) { var x = String(t || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase().replace(/^0+/, ''); return x || null; }
+  function matchStaff(db, sn, name) {
+    var m;
+    if (normSn(sn)) { m = db.staff.filter(function (s) { return s.active && normSn(s.service_number) === normSn(sn); }); if (m.length === 1) return m[0].id; }
+    if (normName(name)) { m = db.staff.filter(function (s) { return s.active && normName(s.name) === normName(name); }); if (m.length === 1) return m[0].id; }
+    return null;
+  }
+  function uniJson(db, u) {
+    return { id: u.id, order_number: u.order_number, person_name: u.person_name, service_number: u.service_number || null, staff_id: u.staff_id || null,
+      staff_name: u.staff_id ? staffName(db, u.staff_id) : null, items: u.items == null ? null : u.items, depot: u.depot || null, status: u.status, source: u.source,
+      note: u.note || null, tracks_updates: u.tracks_updates || 0, created_at: u.created_at, updated_at: u.updated_at, arrived_at: u.arrived_at || null,
+      arrived_by_name: u.arrived_by ? staffName(db, u.arrived_by) : null, notified_at: u.notified_at || null, collected_at: u.collected_at || null,
+      collected_by_name: u.collected_by ? staffName(db, u.collected_by) : null, collected_self: !!u.collected_self, tracks_done: !!u.tracks_done, push_on: false };
+  }
+  function uniRelink(db) {
+    db.uniforms.forEach(function (u) {
+      if (!u.staff_id && (u.status === 'in_transit' || u.status === 'arrived')) {
+        var v = matchStaff(db, u.service_number, u.person_name);
+        if (v) { u.staff_id = v; u.updated_at = now(); if (u.status === 'arrived') u.notified_at = now(); }
+      }
+    });
+  }
+  function uniOpen(db) { return db.uniforms.filter(function (u) { return u.status === 'in_transit' || u.status === 'arrived'; }); }
+  function uniInbound(db, ev, order, name, sn, depot, items) {
+    order = String(order || '').trim().slice(0, 40); name = String(name || '').trim().slice(0, 120);
+    if (!order) fail('Order number is required.');
+    if (ev === 'cancelled') {
+      var c = uniOpen(db).filter(function (u) { return lc(u.order_number) === lc(order); }).pop();
+      if (!c) return { ok: true, ticket: null };
+      c.status = 'cancelled'; c.note = ((c.note || '') + ' Cancelled in TRACKS.').trim(); c.updated_at = now();
+      return { ok: true, ticket: c.id, status: 'cancelled' };
+    }
+    if (ev !== 'dispatched') fail('Unknown event.');
+    var st = matchStaff(db, sn, name);
+    var u = db.uniforms.filter(function (x) { return x.status === 'in_transit' && lc(x.order_number) === lc(order); }).pop();
+    if (u) {
+      u.person_name = name || u.person_name; u.service_number = sn || u.service_number; u.staff_id = u.staff_id || st;
+      u.items = items != null ? items : u.items; u.depot = depot || u.depot; u.tracks_updates++; u.updated_at = now();
+      return { ok: true, ticket: u.id, new: false, matched: !!u.staff_id };
+    }
+    u = { id: db.nextU++, order_number: order, person_name: name, service_number: sn || null, staff_id: st, items: items == null ? null : items, depot: depot || null,
+          status: 'in_transit', source: 'tracks', tracks_updates: 1, created_at: now(), updated_at: now(), tracks_done: false };
+    db.uniforms.push(u);
+    return { ok: true, ticket: u.id, new: true, matched: !!st };
+  }
   function stocktakeReport(db, st) {
     var counts = db.counts.filter(function (c) { return c.stocktake_id === st.id; });
     return {
@@ -285,7 +347,9 @@
           return b.urgent && b.sender_id !== s.id && new Date(b.published_at).getTime() > fortnight && (b.require_ack ? !(r && r.acked_at) : !(r && r.seen_at));
         }).sort(function (x, y) { return y.published_at.localeCompare(x.published_at); })
           .map(function (b) { return { id: b.id, title: b.title, at: b.published_at, who: staffName(db, b.sender_id), kind_label: kindLabel(b.kind) }; }),
-        whats_new: pendingNotes(db, s).length };
+        whats_new: pendingNotes(db, s).length,
+        uniforms_ready: (db.uniforms || []).filter(function (u) { return u.staff_id === s.id && u.status === 'arrived'; }).length,
+        uniforms_open: isOfficeRole(s.role) ? uniOpen(db).length : 0 };
     },
     change_my_pin: function (db, a) {
       var s = auth(db, a.p_token);
@@ -347,7 +411,8 @@
         unexported: db.tx.filter(function (t) { return t.kind === 'take' && !t.undone && !t.exported_at; }).length,
         item_count: db.items.filter(function (i) { return i.active; }).length,
         staff_count: db.staff.filter(function (s) { return s.active; }).length,
-        open_stocktake: open ? open.id : null
+        open_stocktake: open ? open.id : null,
+        uniforms_open: uniOpen(db).length
       };
     },
     save_item: function (db, a) {
@@ -487,7 +552,7 @@
     },
     list_staff: function (db, a) {
       authOffice(db, a.p_token);
-      return db.staff.map(function (s) { return { id: s.id, name: s.name, role: s.role, active: s.active, last_login: s.last_login || null, can_broadcast: !!s.can_broadcast, must_change_pin: !!s.must_change_pin, position: s.position || 'other', union_affiliation: s.union_affiliation || 'none',
+      return db.staff.map(function (s) { return { id: s.id, name: s.name, role: s.role, active: s.active, last_login: s.last_login || null, can_broadcast: !!s.can_broadcast, must_change_pin: !!s.must_change_pin, position: s.position || 'other', union_affiliation: s.union_affiliation || 'none', service_number: s.service_number || null,
         locked: !!(s.locked_until && new Date(s.locked_until) > new Date()) }; })
         .sort(function (x, y) { return (y.active - x.active) || lc(x.name).localeCompare(lc(y.name)); });
     },
@@ -509,15 +574,17 @@
       if (db.staff.some(function (x) { return lc(x.name) === lc(name) && x.id !== p.id; })) fail('Someone with that name already exists.');
       if (!p.id) {
         var pin = p.pin || defaultPin(db);
-        var s = { id: uid(), name: name, pin: pin, role: role, active: active, failed: 0, locked_until: null, last_login: null, can_broadcast: !!p.can_broadcast, must_change_pin: true, position: pos, union_affiliation: uni, created_at: now() };
-        db.staff.push(s); return { id: s.id, pin: pin };
+        var s = { id: uid(), name: name, pin: pin, role: role, active: active, failed: 0, locked_until: null, last_login: null, can_broadcast: !!p.can_broadcast, must_change_pin: true, position: pos, union_affiliation: uni, service_number: String(p.service_number || '').trim().slice(0, 30) || null, created_at: now() };
+        db.staff.push(s); uniRelink(db); return { id: s.id, pin: pin };
       }
       if (p.id === me.id && (role !== me.role || !active)) fail('You can\'t change your own access level or remove yourself.');
       var t = db.staff.find(function (x) { return x.id === p.id; });
       t.name = name; t.role = role; t.active = active; t.can_broadcast = !!p.can_broadcast; t.position = pos; t.union_affiliation = uni;
+      if ('service_number' in p) t.service_number = String(p.service_number || '').trim().slice(0, 30) || null;
       if (p.pin) { t.pin = p.pin; t.failed = 0; t.locked_until = null; if (t.id !== me.id) t.must_change_pin = true; }
       if (!active || p.pin) Object.keys(db.sessions).forEach(function (k) { if (db.sessions[k] === t.id && t.id !== me.id) delete db.sessions[k]; });
       if (!active) db.gmembers = db.gmembers.filter(function (m) { return m.staff_id !== t.id; });
+      uniRelink(db);
       return { id: t.id };
     },
     get_settings: function (db, a) {
@@ -699,6 +766,97 @@
       auth(db, a.p_token);
       return (a.p_ids || []).slice(0, 40).filter(function (id) { return db.itemImg[id] && imgMem[id]; })
         .map(function (id) { return { id: id, ver: db.itemImg[id].ver, mime: db.itemImg[id].mime, data: imgMem[id] }; });
+    },
+    list_uniform_orders: function (db, a) {
+      authOffice(db, a.p_token);
+      var rank = { arrived: 1, in_transit: 2 };
+      var list = db.uniforms.filter(function (u) { return a.p_done ? (u.status === 'collected' || u.status === 'cancelled') : (u.status === 'in_transit' || u.status === 'arrived'); })
+        .sort(function (x, y) { return ((rank[x.status] || 3) - (rank[y.status] || 3)) || String(y.collected_at || y.arrived_at || y.created_at).localeCompare(String(x.collected_at || x.arrived_at || x.created_at)); });
+      return { tickets: list.map(function (u) { return uniJson(db, u); }), open: uniOpen(db).length,
+               tracks_todo: db.uniforms.filter(function (u) { return u.status === 'collected' && !u.tracks_done; }).length,
+               linked: !!db.settings.tracks_key, last_seen: db.settings.tracks_last_seen || null };
+    },
+    uniform_set_status: function (db, a) {
+      var s = authOffice(db, a.p_token), u = db.uniforms.find(function (x) { return x.id === a.p_id; }), notified = false;
+      if (!u) fail('That ticket no longer exists.');
+      if (a.p_status === 'arrived') {
+        if (u.status === 'cancelled') fail('That order was cancelled.');
+        if (u.status === 'in_transit') { u.arrived_at = now(); u.arrived_by = s.id; if (u.staff_id) { u.notified_at = now(); notified = true; } }
+        u.status = 'arrived'; u.collected_at = null; u.collected_by = null; u.collected_self = false;
+      } else if (a.p_status === 'collected') {
+        if (u.status !== 'arrived') fail('Tick it as arrived first.');
+        u.status = 'collected'; u.collected_at = now(); u.collected_by = s.id; u.collected_self = false;
+      } else if (a.p_status === 'in_transit') {
+        if (u.status !== 'arrived') fail('Only an arrived order can be put back to "on its way".');
+        u.status = 'in_transit'; u.arrived_at = null; u.arrived_by = null; u.notified_at = null;
+      } else if (a.p_status === 'cancelled') {
+        u.status = 'cancelled'; u.note = ((u.note || '') + ' Closed by ' + s.name + '.').trim();
+      } else fail('Unknown status.');
+      u.updated_at = now();
+      var r = uniJson(db, u); r.notified = notified; return r;
+    },
+    uniform_link_person: function (db, a) {
+      authOffice(db, a.p_token);
+      var u = db.uniforms.find(function (x) { return x.id === a.p_id; });
+      if (!u) fail('That ticket no longer exists.');
+      if (a.p_staff_id && !db.staff.some(function (x) { return x.id === a.p_staff_id && x.active; })) fail('That person is not in Kippa Crew.');
+      u.staff_id = a.p_staff_id || null; u.updated_at = now();
+      var notified = !!(u.status === 'arrived' && u.staff_id); if (notified) u.notified_at = now();
+      var r = uniJson(db, u); r.notified = notified; return r;
+    },
+    uniform_add: function (db, a) {
+      var s = authOffice(db, a.p_token), order = String(a.p_order || '').trim();
+      if (!order) fail('Order number is required.');
+      if (!a.p_staff_id && !String(a.p_name || '').trim()) fail('Choose who it is for.');
+      if (a.p_items != null && (a.p_items < 0 || a.p_items > 999)) fail('Items must be 0 to 999.');
+      if (uniOpen(db).some(function (u) { return lc(u.order_number) === lc(order); })) fail('There is already an open ticket for that order.');
+      var u = { id: db.nextU++, order_number: order.slice(0, 40), person_name: staffName(db, a.p_staff_id) || String(a.p_name).trim(), staff_id: a.p_staff_id || null,
+                items: a.p_items == null ? null : a.p_items, status: 'in_transit', source: 'manual', note: a.p_note || null, tracks_updates: 0,
+                created_by: s.id, created_at: now(), updated_at: now(), tracks_done: false };
+      db.uniforms.push(u); return uniJson(db, u);
+    },
+    uniform_tracks_done: function (db, a) {
+      authOffice(db, a.p_token);
+      db.uniforms.forEach(function (u) { if ((a.p_ids || []).indexOf(u.id) >= 0 && u.status === 'collected') u.tracks_done = a.p_done !== false; });
+    },
+    my_uniform_orders: function (db, a) {
+      var s = auth(db, a.p_token), rank = { arrived: 1, in_transit: 2 }, cut = Date.now() - 60 * 86400000;
+      return db.uniforms.filter(function (u) { return u.staff_id === s.id && (u.status === 'in_transit' || u.status === 'arrived' || (u.status === 'collected' && new Date(u.collected_at).getTime() > cut)); })
+        .sort(function (x, y) { return ((rank[x.status] || 3) - (rank[y.status] || 3)) || y.id - x.id; })
+        .map(function (u) { return { id: u.id, order_number: u.order_number, items: u.items, status: u.status, created_at: u.created_at, arrived_at: u.arrived_at || null, collected_at: u.collected_at || null }; });
+    },
+    uniform_got_it: function (db, a) {
+      var s = auth(db, a.p_token), u = db.uniforms.find(function (x) { return x.id === a.p_id && x.staff_id === s.id && x.status === 'arrived'; });
+      if (!u) fail('That order isn\'t waiting for you.');
+      u.status = 'collected'; u.collected_at = now(); u.collected_by = s.id; u.collected_self = true; u.updated_at = now();
+    },
+    tracks_link_info: function (db, a) {
+      auth(db, a.p_token, true);
+      return { key: db.settings.tracks_key || '', last_seen: db.settings.tracks_last_seen || null, last_event: db.settings.tracks_last_event || null,
+               unmatched: uniOpen(db).filter(function (u) { return !u.staff_id; }).length,
+               no_service_number: db.staff.filter(function (s) { return s.active && !String(s.service_number || '').trim(); }).length };
+    },
+    tracks_link_set: function (db, a) {
+      auth(db, a.p_token, true);
+      var k = 'krd_'; for (var i = 0; i < 48; i++) k += '0123456789abcdef'[Math.random() * 16 | 0];
+      db.settings.tracks_key = a.p_on ? k : '';
+      return F.tracks_link_info(db, a);
+    },
+    tracks_inbound: function (db, a) {
+      if (!db.settings.tracks_key) fail('TRACKS_LINK_OFF');
+      if (a.p_key !== db.settings.tracks_key) fail('BAD_KEY');
+      db.settings.tracks_last_seen = now(); db.settings.tracks_last_event = a.p_event + ' ' + a.p_order;
+      if (a.p_event === 'ping') return { ok: true, event: 'ping' };
+      return uniInbound(db, a.p_event, a.p_order, a.p_name, a.p_service, a.p_depot, a.p_items);
+    },
+    demo_simulate_tracks: function (db, a) {
+      authOffice(db, a.p_token);
+      var crew = db.staff.filter(function (s) { return s.active && s.role === 'staff'; });
+      var who = crew[Math.floor(Math.random() * crew.length)] || db.staff[0];
+      var parts = who.name.split(' ');
+      db.settings.tracks_last_seen = now(); db.settings.tracks_last_event = 'dispatched (demo)';
+      return uniInbound(db, 'dispatched', 'ORD-2026-' + String(4900 + db.nextU).padStart(6, '0'), parts.length > 1 ? parts.slice(1).join(' ') + ', ' + parts[0] : who.name,
+                        who.service_number || null, 'Kippa Ring', 1 + Math.floor(Math.random() * 4));
     },
     send_message: function (db, a) {
       var s = auth(db, a.p_token), body = String(a.p_body || '').trim();
