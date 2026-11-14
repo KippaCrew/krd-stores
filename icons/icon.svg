@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#00768C"/>
+  <polygon points="372,0 512,0 512,512 160,512" fill="#151A40"/>
+  <g transform="translate(116 70) scale(5.8)" fill="none" stroke="#fff" stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M24 5 41 14v20L24 43 7 34V14Z" fill="#00768C"/>
+    <path d="M7 14l17 9 17-9"/>
+    <path d="M24 23v20"/>
+    <path d="M15.5 9.5 32.5 18.5v7"/>
+  </g>
+  <text x="256" y="452" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-weight="bold" font-size="92" letter-spacing="10" fill="#fff">KRD</text>
+</svg>
