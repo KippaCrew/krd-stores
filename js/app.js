@@ -41,7 +41,11 @@
     viewCleanup: null,
     defaultPin: '0000'
   };
-  var isAdmin = function () { return S.me && S.me.role === 'admin'; };
+  var isAdmin = function () { return S.me && S.me.role === 'admin'; };            // Manager
+  var isAdministrator = function () { return S.me && S.me.role === 'administrator'; };
+  var isOffice = function () { return isAdmin() || isAdministrator(); };          // Manager or Administrator
+  function roleLabel(r) { return r === 'admin' ? 'Manager' : r === 'administrator' ? 'Administrator' : 'Staff'; }
+  function sendLabel() { return S.me && S.me.broadcast_kind === 'depot' ? 'Depot Announcement' : 'TOI Broadcast'; }
 
   // ------------------------------------------------------------------
   //  Helpers
@@ -242,7 +246,14 @@
       { href: '#/stock', label: 'Stock', icon: I.stock, match: /^#\/(stock|import)/, dot: S.pulse.low },
       { href: '#/count', label: 'Count', icon: I.count, match: /^#\/count/ },
       { href: '#/messages', label: 'Messages', icon: I.chat, match: /^#\/(chat|messages|broadcast)/, dot: (S.pulse.unread || 0) + (S.pulse.broadcasts || 0) },
-      { href: '#/more', label: 'More', icon: I.more, match: /^#\/(more|receive|reports|tracks|staff|settings|me|history|whatsnew)/ }
+      { href: '#/more', label: 'More', icon: I.more, match: /^#\/(more|receive|reports|tracks|staff|settings|share|me|history|whatsnew)/ }
+    ];
+    if (isAdministrator()) return [
+      { href: '#/', label: 'Home', icon: I.home, match: /^#\/?$/ },
+      { href: '#/take', label: 'Take', icon: I.take, match: /^#\/take/ },
+      { href: '#/count', label: 'Count', icon: I.count, match: /^#\/count/ },
+      { href: '#/messages', label: 'Messages', icon: I.chat, match: /^#\/(chat|messages|broadcast)/, dot: (S.pulse.unread || 0) + (S.pulse.broadcasts || 0) },
+      { href: '#/more', label: 'More', icon: I.more, match: /^#\/(more|receive|staff|share|me|history|whatsnew)/ }
     ];
     return [
       { href: '#/take', label: 'Take', icon: I.take, match: /^#\/(take)?\/?$/ },
@@ -269,7 +280,7 @@
   //  Router
   // ------------------------------------------------------------------
   var ROUTES = [
-    [/^#\/?$/, function () { return isAdmin() ? viewHome() : viewTake(); }],
+    [/^#\/?$/, function () { return isAdmin() ? viewHome() : isAdministrator() ? viewOfficeHome() : viewTake(); }],
     [/^#\/take$/, function () { return viewTake(); }],
     [/^#\/history$/, function () { return viewHistory(); }],
     [/^#\/messages$/, function () { location.replace(S.pulse.broadcasts || !S.pulse.unread ? '#/broadcasts' : '#/chat'); }],
@@ -280,18 +291,20 @@
     [/^#\/chat\/(.+)$/, function (m) { return viewChat(decodeURIComponent(m[1])); }],
     [/^#\/me$/, function () { return viewMe(); }],
     [/^#\/whatsnew$/, function () { return viewWhatsNew(); }],
-    [/^#\/more$/, function () { return adminOnly(viewMore); }],
+    [/^#\/more$/, function () { return officeOnly(viewMore); }],
+    [/^#\/share$/, function () { return officeOnly(viewShare); }],
     [/^#\/stock(?:\?(low))?$/, function (m) { return adminOnly(function () { return viewStock(m[1]); }); }],
     [/^#\/import$/, function () { return adminOnly(viewImport); }],
-    [/^#\/receive$/, function () { return adminOnly(viewReceive); }],
-    [/^#\/count$/, function () { return adminOnly(viewCount); }],
-    [/^#\/count\/(.+)$/, function (m) { return adminOnly(function () { return viewCountReport(m[1]); }); }],
+    [/^#\/receive$/, function () { return officeOnly(viewReceive); }],
+    [/^#\/count$/, function () { return officeOnly(viewCount); }],
+    [/^#\/count\/(.+)$/, function (m) { return officeOnly(function () { return viewCountReport(m[1]); }); }],
     [/^#\/reports$/, function () { return adminOnly(viewReports); }],
     [/^#\/tracks$/, function () { return adminOnly(viewTracks); }],
-    [/^#\/staff$/, function () { return adminOnly(viewStaff); }],
+    [/^#\/staff$/, function () { return officeOnly(viewStaff); }],
     [/^#\/settings$/, function () { return adminOnly(viewSettings); }]
   ];
-  function adminOnly(fn) { if (!isAdmin()) { location.hash = '#/take'; return; } return fn(); }
+  function adminOnly(fn) { if (!isAdmin()) { location.hash = isOffice() ? '#/' : '#/take'; return; } return fn(); }
+  function officeOnly(fn) { if (!isOffice()) { location.hash = '#/take'; return; } return fn(); }
 
   var routeSeq = 0;
   async function route() {
@@ -355,7 +368,7 @@
   }
 
   function viewPeople(people) {
-    var demo = api.isDemo ? '<div class="alert alert-warning small">Demo PINs — Manager (demo): <b>1234</b> · Sam Smith: <b>1111</b> · Alex Brown: <b>2222</b></div>' : '';
+    var demo = api.isDemo ? '<div class="alert alert-warning small">Demo PINs — Manager (demo): <b>1234</b> · Pat Admin (demo): <b>3333</b> · Sam Smith: <b>1111</b> · Alex Brown: <b>2222</b></div>' : '';
     render('<div class="signin-wrap">' +
       '<h4 class="mb-1">Who are you?</h4><p class="text-muted mb-3">Tap your name to sign in.</p>' + demo +
       (people.length > 8 ? '<input class="form-control mb-3" id="pSearch" type="search" placeholder="Search names…" autocomplete="off">' : '') +
@@ -392,7 +405,7 @@
         '<button type="button" data-k="0">0</button>' +
         '<button type="button" class="k-fn" data-k="del" aria-label="Delete">⌫</button>' +
       '</div>' +
-      (api.isDemo ? '<p class="small text-muted mt-3 text-center">Demo PINs: Manager 1234 · Sam 1111 · Alex 2222</p>' : '') +
+      (api.isDemo ? '<p class="small text-muted mt-3 text-center">Demo PINs: Manager 1234 · Pat Admin 3333 · Sam 1111 · Alex 2222</p>' : '') +
       '<input type="tel" id="pinKb" inputmode="numeric" autocomplete="one-time-code" aria-label="PIN" style="position:absolute;opacity:0;width:1px;height:1px">' +
       '</div>');
     function paint() { qsa('#dots span').forEach(function (d, i) { d.classList.toggle('on', i < pin.length); }); }
@@ -402,7 +415,7 @@
         var r = await api.rpc('login', { p_staff_id: person.id, p_pin: pin });
         if (r && r.error) throw new Error(r.error);
         setSession(r); toast('Signed in as ' + r.me.name);
-        location.hash = isAdmin() ? '#/' : '#/take';
+        location.hash = isOffice() ? '#/' : '#/take';
         route(); flushOutbox(); pulse(); syncPush();
       } catch (e) {
         qs('#pinErr').textContent = e.message;
@@ -466,7 +479,7 @@
       try {
         S.me = await call('set_own_pin', { p_new: pin }); LS.set('me', S.me);
         toast('PIN set — welcome aboard!');
-        location.hash = isAdmin() ? '#/' : '#/take'; route(); pulse();
+        location.hash = isOffice() ? '#/' : '#/take'; route(); pulse();
       } catch (e) { first = null; screen(); qs('#pinErr').textContent = e.message; }
       finally { busy = false; }
     }
@@ -744,15 +757,15 @@
                : (team ? 'Messages to everyone' : group ? plural(cv.members, 'member') : 'No messages yet');
       if (group) {
         return '<a class="list-row" href="#/chat/' + encodeURIComponent(cv.key) + '">' +
-          '<span class="avatar group' + (cv.sys ? ' sys' : '') + '">' + esc(cv.sys ? (cv.kind === 'driver' ? 'DRV' : 'GRD') : initials(cv.name)) + '</span>' +
+          groupAvatar(cv) +
           '<div class="grow"><div class="ttl">' + esc(cv.name) + (cv.sys ? ' <span class="badge bg-info">Auto</span>' : '') + '</div>' +
           '<div class="sub">' + esc(last) + '</div></div>' +
           '<div class="text-end">' + (cv.last ? '<div class="small text-muted">' + esc(ago(cv.last.at)) + '</div>' : '') +
           (cv.unread ? '<span class="badge bg-danger">' + cv.unread + '</span>' : '') + '</div></a>';
       }
       return '<a class="list-row" href="#/chat/' + encodeURIComponent(cv.key) + '">' +
-        '<span class="avatar' + (team ? ' admin' : (cv.role === 'admin' ? ' admin' : '')) + '">' + (team ? '👥' : esc(initials(cv.name))) + '</span>' +
-        '<div class="grow"><div class="ttl">' + esc(cv.name) + (cv.role === 'admin' ? ' <span class="badge bg-navy">Manager</span>' : '') + '</div>' +
+        '<span class="avatar' + (team ? ' admin' : (cv.role === 'admin' || cv.role === 'administrator' ? ' admin' : '')) + '">' + (team ? '👥' : esc(initials(cv.name))) + '</span>' +
+        '<div class="grow"><div class="ttl">' + esc(cv.name) + (cv.role === 'admin' || cv.role === 'administrator' ? ' <span class="badge bg-navy">' + roleLabel(cv.role) + '</span>' : '') + '</div>' +
         '<div class="sub">' + esc(last) + '</div></div>' +
         '<div class="text-end">' + (cv.last ? '<div class="small text-muted">' + esc(ago(cv.last.at)) + '</div>' : '') +
         (cv.unread ? '<span class="badge bg-danger">' + cv.unread + '</span>' : '') + '</div></a>';
@@ -763,7 +776,7 @@
         '<button class="btn btn-sm btn-outline-primary" id="newGroup">+ New group</button></div>' +
       (c.groups.length ? '<div class="list mb-3">' + c.groups.map(function (g) { return row(g, false, true); }).join('') + '</div>'
                        : '<div class="empty py-3">You\'re not in any groups yet.</div>') +
-      '<div class="section-title">' + (isAdmin() ? 'Direct messages' : 'Message a manager') + '</div>' +
+      '<div class="section-title">' + (isOffice() ? 'Direct messages' : 'Message a manager or administrator') + '</div>' +
       (c.people.length ? '<div class="list">' + c.people.map(function (p) { return row(p, false); }).join('') + '</div>' : '<div class="empty">No one to message yet.</div>'));
     qs('#newGroup').addEventListener('click', function () { groupEditor(null); });
     var t = setInterval(async function () {
@@ -781,8 +794,8 @@
     var lastId = 0, lastDay = null;
     render('<div class="chat-wrap">' +
       '<div class="chat-head"><a href="#/chat" class="btn btn-sm btn-outline-secondary" aria-label="Back" style="width:40px">' + I.back + '</a>' +
-      (isGroup ? '<span class="avatar group' + (conv.sys ? ' sys' : '') + '">' + esc(conv.sys ? (conv.kind === 'driver' ? 'DRV' : 'GRD') : initials(conv.name)) + '</span>'
-               : '<span class="avatar' + (key === 'team' || conv.role === 'admin' ? ' admin' : '') + '">' + (key === 'team' ? '👥' : esc(initials(conv.name))) + '</span>') +
+      (isGroup ? groupAvatar(conv)
+               : '<span class="avatar' + (key === 'team' || conv.role === 'admin' || conv.role === 'administrator' ? ' admin' : '') + '">' + (key === 'team' ? '👥' : esc(initials(conv.name))) + '</span>') +
       '<div class="flex-grow-1"><div class="fw-bold">' + esc(conv.name) + '</div><div class="small text-muted">' +
         (key === 'team' ? 'Everyone sees these messages' : isGroup ? plural(conv.members, 'member') + (conv.sys ? ' · automatic' : '') : 'Private conversation') + '</div></div>' +
       (isGroup ? '<button class="btn btn-sm btn-outline-secondary" id="grpInfo">Info</button>' : '') + '</div>' +
@@ -840,6 +853,12 @@
     timer = setInterval(poll, 4000);
   }
 
+  // Icon for a group chat: union logos for RTBU / AFULE, short labels for Drivers / Guards, initials otherwise
+  function groupAvatar(g) {
+    if (g.kind === 'rtbu' || g.kind === 'afule') return '<span class="avatar group union"><img src="icons/chat-' + g.kind + '.png" alt="' + (g.kind === 'rtbu' ? 'RTBU' : 'AFULE') + '"></span>';
+    return '<span class="avatar group' + (g.sys ? ' sys' : '') + '">' + esc(g.sys ? (g.kind === 'driver' ? 'DRV' : 'GRD') : initials(g.name)) + '</span>';
+  }
+
   // ------------------------------------------------------------------
   //  GROUP CHATS
   // ------------------------------------------------------------------
@@ -863,7 +882,7 @@
       qs('#gPeople', w).innerHTML = people.filter(function (p) { return !q || p.name.toLowerCase().indexOf(q) >= 0; }).map(function (p) {
         return '<label class="list-row" style="cursor:pointer"><input class="form-check-input flex-none" type="checkbox" data-gp="' + p.id + '"' + (picked[p.id] ? ' checked' : '') + '>' +
           '<span class="avatar' + (p.role === 'admin' ? ' admin' : '') + '">' + esc(initials(p.name)) + '</span><div class="grow"><div class="ttl">' + esc(p.name) + '</div>' +
-          '<div class="sub">' + esc(posLabel(p.position)) + (p.role === 'admin' ? ' · Manager' : '') + '</div></div></label>';
+          '<div class="sub">' + esc(posLabel(p.position)) + (p.role !== 'staff' ? ' · ' + roleLabel(p.role) : '') + '</div></div></label>';
       }).join('') || '<div class="empty">No one found.</div>';
       var n = Object.keys(picked).length; qs('#gCount', w).textContent = n ? '(' + n + ' selected)' : '';
     }
@@ -887,12 +906,14 @@
     try { g = await call('group_info', { p_key: key }, { bg: true }); } catch (err) { return errToast(err); }
     var w = sheet({
       title: g.name,
-      body: (g.sys ? '<div class="alert alert-info small">Everyone whose position is <b>' + (g.kind === 'driver' ? 'Driver' : 'Guard') + '</b> is in this group automatically. Change a person\'s position under Staff to move them.</div>'
+      body: (g.sys ? '<div class="alert alert-info small">' + (g.kind === 'rtbu' || g.kind === 'afule'
+                     ? 'Everyone whose union affiliation is <b>' + unionLabel(g.kind) + '</b> is in this chat automatically. Change it under Staff to move someone.'
+                     : 'Everyone whose position is <b>' + (g.kind === 'driver' ? 'Driver' : 'Guard') + '</b> is in this chat automatically. Change a person\'s position under Staff to move them.') + '</div>'
                    : '<p class="small text-muted">Made by ' + esc(g.created_by || '—') + '. Only members can see this group.</p>') +
         '<div class="form-label mb-1">' + plural(g.members.length, 'member') + '</div>' +
         '<div class="list">' + g.members.map(function (m) {
           return '<div class="list-row"><span class="avatar' + (m.role === 'admin' ? ' admin' : '') + '">' + esc(initials(m.name)) + '</span><div class="grow"><div class="ttl">' + esc(m.name) + (m.me ? ' (you)' : '') + '</div>' +
-            '<div class="sub">' + esc(posLabel(m.position)) + (m.role === 'admin' ? ' · Manager' : '') + '</div></div></div>';
+            '<div class="sub">' + esc(posLabel(m.position)) + (m.role !== 'staff' ? ' · ' + roleLabel(m.role) : '') + '</div></div></div>';
         }).join('') + '</div>',
       foot: g.sys ? '<button class="btn btn-primary" data-close>Close</button>'
         : (g.can_manage ? '<button class="btn btn-outline-danger" id="gDel">Delete group</button><button class="btn btn-primary" id="gEdit">Edit name & members</button>' : '') +
@@ -920,8 +941,8 @@
     if (seq0 !== routeSeq) return;   // user moved on while we checked
     render('<div class="page-title"><h4>My account</h4></div>' +
       '<div class="card mb-3"><div class="card-body d-flex align-items-center gap-3">' +
-        '<span class="avatar' + (isAdmin() ? ' admin' : '') + '" style="width:3rem;height:3rem;font-size:1.1rem">' + esc(initials(S.me.name)) + '</span>' +
-        '<div><div class="fw-bold fs-5">' + esc(S.me.name) + '</div><div class="text-muted">' + (isAdmin() ? 'Manager' : 'Staff') + '</div></div>' +
+        '<span class="avatar' + (isOffice() ? ' admin' : '') + '" style="width:3rem;height:3rem;font-size:1.1rem">' + esc(initials(S.me.name)) + '</span>' +
+        '<div><div class="fw-bold fs-5">' + esc(S.me.name) + '</div><div class="text-muted">' + roleLabel(S.me.role) + '</div></div>' +
         '<button class="btn btn-outline-danger ms-auto" id="signOut">Sign out</button></div></div>' +
       notif +
       '<div class="card mb-3"><div class="card-header">Change my PIN</div><div class="card-body">' +
@@ -1008,10 +1029,64 @@
   }
 
   // ------------------------------------------------------------------
+  //  ADMINISTRATOR HOME & SHARE THE APP
+  // ------------------------------------------------------------------
+  async function viewOfficeHome() {
+    loading();
+    var st = await call('list_stocktakes');
+    var open = st.find(function (x) { return x.status === 'open'; });
+    render('<div id="bcBanner"></div><div id="pushPrompt"></div>' +
+      '<div class="page-title"><h4>G\'day, ' + esc(S.me.name.split(' ')[0]) + '</h4><span class="small text-muted">' + esc(fmtDay(new Date().toISOString())) + '</span></div>' +
+      (open ? '<div class="alert alert-info d-flex align-items-center justify-content-between gap-2"><span>A stocktake is in progress.</span><a class="btn btn-sm btn-primary" href="#/count">Continue</a></div>' : '') +
+      '<div class="action-grid mb-3">' +
+        '<a class="action primary" href="#/take">' + I.take + 'Take items</a>' +
+        '<a class="action" href="#/receive">' + I.truck + 'Receive delivery</a>' +
+        '<a class="action" href="#/count">' + I.count + 'Stocktake</a>' +
+        '<a class="action" href="#/staff">' + I.users + 'Staff</a>' +
+        '<a class="action" href="#/broadcasts/new" style="grid-column:1/-1">' + I.megaphone + 'Send a Depot Announcement</a>' +
+      '</div>' +
+      '<div class="list"><a class="list-row" href="#/share"><span style="width:26px;color:var(--qr-light-blue)">' + I.export + '</span><div class="grow"><div class="ttl">Share the app</div><div class="sub">Send the link to the crew</div></div><span class="text-muted">›</span></a></div>');
+    paintBroadcastBanner(); paintPushPrompt();
+  }
+
+  function viewShare() {
+    var url = location.origin + location.pathname;
+    render('<div class="page-title"><h4>Share the app</h4></div>' +
+      '<div class="card mb-3"><div class="card-body">' +
+        '<p class="mb-2">Send the crew this link. They open it on their phone, tap their name, and sign in with the PIN you give them.</p>' +
+        '<div class="input-group mb-3"><input class="form-control" readonly value="' + esc(url) + '" id="shareUrl" aria-label="App link"><button class="btn btn-outline-primary" id="shareCopy">Copy</button></div>' +
+        (navigator.share ? '<button class="btn btn-primary w-100 mb-2" id="shareNative">Share by text, email or Teams…</button>' : '') +
+        '<a class="btn btn-outline-secondary w-100" href="sms:?&body=' + encodeURIComponent('Kippa Crew app: ' + url) + '">Send as a text message</a>' +
+      '</div></div>' +
+      '<div class="card"><div class="card-header">Tell them to</div><div class="card-body"><ol class="mb-0">' +
+        '<li>Open the link on their phone.</li>' +
+        '<li>Tap their name and enter their PIN, then choose their own.</li>' +
+        '<li>Add it to the home screen. <b>iPhone:</b> Safari → Share → Add to Home Screen. <b>Android:</b> ⋮ → Install app.</li>' +
+        '<li>Go to <b>Me → Turn on notifications</b>.</li></ol></div></div>');
+    qs('#shareCopy').addEventListener('click', function () { copyText(url); });
+    var sn = qs('#shareNative');
+    if (sn) sn.addEventListener('click', function () { navigator.share({ title: 'Kippa Crew', text: 'Kippa Crew – the Kippa Ring Depot app', url: url }).catch(function () {}); });
+  }
+
+  // ------------------------------------------------------------------
   //  MORE (admin menu)
   // ------------------------------------------------------------------
   function viewMore() {
     function row(href, icon, t, s) { return '<a class="list-row" href="' + href + '"><span style="width:26px;color:var(--qr-light-blue)">' + icon + '</span><div class="grow"><div class="ttl">' + t + '</div><div class="sub">' + s + '</div></div><span class="text-muted">›</span></a>'; }
+    if (isAdministrator()) {
+      render('<div class="page-title"><h4>More</h4></div>' +
+        '<div class="list mb-3">' +
+          row('#/broadcasts/new', I.megaphone, 'Send a Depot Announcement', 'A notice to everyone, with PDFs & photos') +
+          row('#/receive', I.truck, 'Receive a delivery', 'Add stock that has arrived') +
+          row('#/count', I.count, 'Stocktake', 'Blind count of the store room') +
+        '</div><div class="list mb-3">' +
+          row('#/staff', I.users, 'Staff', 'Add people, reset PINs') +
+          row('#/share', I.export, 'Share the app', 'Send the link to the crew') +
+          row('#/history', I.history, 'My takes', 'What you have logged yourself') +
+          row('#/me', I.me, 'My account', 'Change PIN, notifications, sign out') +
+        '</div>');
+      return;
+    }
     render('<div class="page-title"><h4>More</h4></div>' +
       '<div class="list mb-3">' +
         row('#/broadcasts', I.megaphone, 'TOI Broadcasts', 'Notices to everyone, with PDFs & photos') +
@@ -1023,6 +1098,7 @@
       '</div><div class="list mb-3">' +
         row('#/staff', I.users, 'Staff', 'Add people, reset PINs') +
         row('#/whatsnew', I.megaphone, 'What\'s New', 'Post app updates & notes everyone sees once') +
+        row('#/share', I.export, 'Share the app', 'Send the link to the crew') +
         row('#/settings', I.gear, 'Settings', 'Reorder emails and daily summary') +
         row('#/history', I.history, 'My takes', 'What you have logged yourself') +
         row('#/me', I.me, 'My account', 'Change PIN, sign out, install app') +
@@ -1243,16 +1319,16 @@
     loading();
     var items = await call('list_items'), qty = {}, q = '';
     render('<div class="page-title"><h4>Receive a delivery</h4></div>' +
-      '<p class="text-muted" style="margin-top:-.5rem">Enter how many of each item arrived. Low items are listed first.</p>' +
+      '<p class="text-muted" style="margin-top:-.5rem">Enter how many of each item arrived.' + (isAdmin() ? ' Low items are listed first.' : '') + '</p>' +
       '<div class="search-bar"><input class="form-control" id="rSearch" type="search" placeholder="Search items…"></div>' +
       '<div id="rList" class="item-list"></div>' +
       '<div class="cart-bar" id="rBar"></div>');
-    var sorted = items.slice().sort(function (a, b) { return (b.low - a.low) || a.name.localeCompare(b.name); });
+    var sorted = items.slice().sort(function (a, b) { return ((b.low ? 1 : 0) - (a.low ? 1 : 0)) || a.name.localeCompare(b.name); });
     function paint() {
       var ql = q.toLowerCase();
       qs('#rList').innerHTML = sorted.filter(function (i) { return !ql || i.name.toLowerCase().indexOf(ql) >= 0; }).map(function (i) {
         return '<div class="count-row' + (qty[i.id] ? ' is-counted' : '') + '"><div class="grow"><div class="item-name">' + esc(i.name) + '</div>' +
-          '<div class="item-meta">' + esc(i.unit) + ' · on hand ' + i.on_hand + (i.low ? ' · <span class="text-danger fw-bold">suggest ' + i.suggest + '</span>' : '') + '</div></div>' +
+          '<div class="item-meta">' + esc(i.unit) + (i.on_hand != null ? ' · on hand ' + i.on_hand : '') + (i.low ? ' · <span class="text-danger fw-bold">suggest ' + i.suggest + '</span>' : '') + '</div></div>' +
           '<input class="form-control" type="number" inputmode="numeric" min="0" placeholder="0" data-r="' + i.id + '" value="' + (qty[i.id] || '') + '" aria-label="Received ' + esc(i.name) + '"></div>';
       }).join('') || '<div class="empty">No items.</div>';
     }
@@ -1278,7 +1354,7 @@
         ev.currentTarget.disabled = true;
         try {
           await call('receive_stock', { p_lines: lines.map(function (l) { return { item_id: l.item.id, qty: l.qty }; }), p_note: qs('#rNote', w).value });
-          closeSheet(); toast('Delivery added to stock'); location.hash = '#/stock';
+          closeSheet(); toast('Delivery added to stock'); location.hash = isAdmin() ? '#/stock' : '#/';
         } catch (err) { ev.currentTarget.disabled = false; errToast(err); }
       });
     });
@@ -1523,13 +1599,13 @@
   async function viewStaff() {
     loading();
     var list = await call('list_staff');
-    var st = await call('get_settings'); S.defaultPin = st.default_pin || '0000';
+    S.defaultPin = await call('staff_default_pin');
     render('<div class="page-title"><h4>Staff</h4><button class="btn btn-primary" id="addP">+ Add person</button></div>' +
       '<p class="text-muted" style="margin-top:-.5rem">Everyone signs in by tapping their name and entering their 4-digit PIN.</p>' +
       '<div class="list">' + list.filter(function (p) { return p.active; }).map(function (p) {
         return '<button class="list-row" data-p="' + p.id + '"' + (p.active ? '' : ' style="opacity:.55"') + '><span class="avatar' + (p.role === 'admin' ? ' admin' : '') + '">' + esc(initials(p.name)) + '</span>' +
-          '<div class="grow"><div class="ttl">' + esc(p.name) + '</div><div class="sub">' + esc(posLabel(p.position)) + ' · ' + (p.last_login ? 'Last signed in ' + esc(ago(p.last_login)) : 'Never signed in') + '</div></div>' +
-          (p.locked ? '<span class="badge bg-danger">Locked</span> ' : '') + (p.active && p.must_change_pin ? '<span class="badge bg-warning me-1">New PIN needed</span>' : '') + (p.active && p.role !== 'admin' && p.can_broadcast ? '<span class="badge bg-info me-1">Broadcaster</span>' : '') + (!p.active ? '<span class="badge bg-secondary">Inactive</span>' : p.role === 'admin' ? '<span class="badge bg-navy">Manager</span>' : '') + '</button>';
+          '<div class="grow"><div class="ttl">' + esc(p.name) + '</div><div class="sub">' + esc(posLabel(p.position)) + (unionLabel(p.union_affiliation) ? ' · ' + unionLabel(p.union_affiliation) : '') + ' · ' + (p.last_login ? 'Last signed in ' + esc(ago(p.last_login)) : 'Never signed in') + '</div></div>' +
+          (p.locked ? '<span class="badge bg-danger">Locked</span> ' : '') + (p.active && p.role === 'administrator' ? '<span class="badge bg-info me-1">Administrator</span>' : '') + (p.active && p.must_change_pin ? '<span class="badge bg-warning me-1">New PIN needed</span>' : '') + (p.active && p.role !== 'admin' && p.can_broadcast ? '<span class="badge bg-info me-1">Broadcaster</span>' : '') + (!p.active ? '<span class="badge bg-secondary">Inactive</span>' : p.role === 'admin' ? '<span class="badge bg-navy">Manager</span>' : '') + '</button>';
       }).join('') + '</div>' +
       (list.some(function (p) { return !p.active; }) ? '<details class="mt-3"><summary>Former staff (' + list.filter(function (p) { return !p.active; }).length + ')</summary><div class="list mt-2">' +
         list.filter(function (p) { return !p.active; }).map(function (p) {
@@ -1538,9 +1614,14 @@
       '<div class="alert alert-secondary mt-3 small mb-0">New people start with the default PIN <b>' + esc(S.defaultPin) + '</b> (change it in <a href="#/settings">Settings</a>). ' +
       'The first time they sign in, the app makes them choose their own. If someone forgets their PIN, tap their name → <b>Reset PIN</b>.</div>');
     qs('#addP').addEventListener('click', function () { editPerson(null); });
-    on($app, 'click', '[data-p]', function (e, b) { editPerson(list.find(function (x) { return x.id === b.getAttribute('data-p'); })); });
+    on($app, 'click', '[data-p]', function (e, b) {
+      var who = list.find(function (x) { return x.id === b.getAttribute('data-p'); });
+      if (isAdministrator() && who.role === 'admin') return toast('Only a Manager can change a Manager\'s details.', true);
+      editPerson(who);
+    });
   }
   function posLabel(p) { return { driver: 'Driver', guard: 'Guard' }[p] || 'Other'; }
+  function unionLabel(u) { return { rtbu: 'RTBU', afule: 'AFULE' }[u] || ''; }
   function editPerson(p) {
     var isNew = !p; p = p || { name: '', role: 'staff', active: true };
     var w = sheet({
@@ -1550,7 +1631,10 @@
         '<div class="col-6"><label class="form-label" for="pPos">Position</label><select class="form-select" id="pPos">' +
           [['driver', 'Driver'], ['guard', 'Guard'], ['other', 'Other']].map(function (o) { return '<option value="' + o[0] + '"' + ((p.position || (isNew ? '' : 'other')) === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
           '</select><div class="form-text">Puts them in the Drivers or Guards chat</div></div>' +
-        '<div class="col-6"><label class="form-label" for="pRole">Access</label><select class="form-select" id="pRole"><option value="staff"' + (p.role === 'staff' ? ' selected' : '') + '>Staff</option><option value="admin"' + (p.role === 'admin' ? ' selected' : '') + '>Manager</option></select></div>' +
+        '<div class="col-6"><label class="form-label" for="pUnion">Union affiliation</label><select class="form-select" id="pUnion">' +
+          [['none', 'None'], ['rtbu', 'RTBU'], ['afule', 'AFULE']].map(function (o) { return '<option value="' + o[0] + '"' + ((p.union_affiliation || 'none') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
+          '</select><div class="form-text">Adds them to that union\'s chat</div></div>' +
+        '<div class="col-6"><label class="form-label" for="pRole">Access</label><select class="form-select" id="pRole"' + (p.id === S.me.id ? ' disabled' : '') + '><option value="staff"' + (p.role === 'staff' ? ' selected' : '') + '>Staff</option><option value="administrator"' + (p.role === 'administrator' ? ' selected' : '') + '>Administrator</option>' + (isAdmin() ? '<option value="admin"' + (p.role === 'admin' ? ' selected' : '') + '>Manager</option>' : '') + '</select></div>' +
         (isNew ? '<div class="col-6"><label class="form-label" for="pPin">Starting PIN</label><input class="form-control" id="pPin" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" placeholder="' + esc(S.defaultPin || '0000') + '" autocomplete="off">' +
           '<div class="form-text">Blank = default PIN</div></div>'
                : '<div class="col-6"><div class="form-label">PIN</div>' + (p.id === S.me.id ? '<a class="btn btn-outline-secondary w-100" href="#/me">Change mine</a>' : '<button type="button" class="btn btn-outline-danger w-100" id="pReset">Reset PIN</button>') +
@@ -1559,7 +1643,7 @@
         '<div class="col-12" id="pBcWrap"><div class="form-check form-switch"><input class="form-check-input" type="checkbox" role="switch" id="pBc"' + (p.can_broadcast ? ' checked' : '') + '><label class="form-check-label" for="pBc"><b>Can send TOI broadcasts</b> (e.g. depot supervisor)</label></div></div>' +
         '<input type="checkbox" id="pActive" hidden' + (p.active ? ' checked' : '') + '>' +
         (!isNew && !p.active ? '<div class="col-12"><div class="alert alert-warning mb-0">' + esc(p.name) + ' was removed (left the depot). Press <b>Bring back</b> to let them sign in again.</div></div>' : '') +
-        '<div class="col-12 small text-muted">Managers can see stock levels, do stocktakes, change items, read everyone\'s activity and send TOI broadcasts.</div>' +
+        '<div class="col-12 small text-muted"><b>Administrators</b> can receive deliveries, run stocktakes, manage staff and send Depot Announcements. <b>Managers</b> can also see stock levels, items, reports, TRACKS entry and settings, and send TOI Broadcasts.</div>' +
         '</form>',
       foot: (!isNew && p.id !== S.me.id ? (p.active ? '<button class="btn btn-outline-danger me-auto" id="pRemove">Remove (left depot)</button>'
                                                       : '<button class="btn btn-success me-auto" id="pBack">Bring back</button>') : '') +
@@ -1572,15 +1656,16 @@
         '<li>be signed out straight away and can\'t sign in again</li><li>disappear from the sign-in list, chats and groups</li>' +
         '<li>stop counting in broadcast and What\'s New read counts</li></ul>' +
         '<p class="mb-0">Everything they logged stays in your reports and TRACKS history. You can bring them back later from <b>Former staff</b>.</p>', 'Remove', true))) return;
-      try { await call('save_staff', { p_person: { id: p.id, name: p.name, role: p.role, active: false, can_broadcast: p.can_broadcast, position: p.position || 'other' } }); toast(p.name + ' removed'); route(); }
+      try { await call('save_staff', { p_person: { id: p.id, name: p.name, role: p.role, active: false, can_broadcast: p.can_broadcast, position: p.position || 'other', union_affiliation: p.union_affiliation || 'none' } }); toast(p.name + ' removed'); route(); }
       catch (err) { errToast(err); }
     });
     var bk = qs('#pBack', w);
     if (bk) bk.addEventListener('click', async function () {
-      try { await call('save_staff', { p_person: { id: p.id, name: p.name, role: p.role, active: true, can_broadcast: p.can_broadcast, position: p.position || 'other' } }); toast(p.name + ' is back — their old PIN still works'); route(); }
+      try { await call('save_staff', { p_person: { id: p.id, name: p.name, role: p.role, active: true, can_broadcast: p.can_broadcast, position: p.position || 'other', union_affiliation: p.union_affiliation || 'none' } }); toast(p.name + ' is back — their old PIN still works'); route(); }
       catch (err) { errToast(err); }
     });
-    function bcVis() { var adm = qs('#pRole', w).value === 'admin'; qs('#pBcWrap', w).classList.toggle('d-none', adm); }
+    // TOI-broadcast permission: Managers decide it, and only for Staff (others already send their own kind)
+    function bcVis() { qs('#pBcWrap', w).classList.toggle('d-none', !isAdmin() || qs('#pRole', w).value !== 'staff'); }
     qs('#pRole', w).addEventListener('change', bcVis); bcVis();
     if (isNew) { var ps = qs('#pPos', w); ps.insertAdjacentHTML('afterbegin', '<option value="" selected disabled>Choose…</option>'); ps.required = true; }
     var rb = qs('#pReset', w);
@@ -1596,7 +1681,7 @@
       if (!qs('#pForm', w).reportValidity()) return;
       var pinEl = qs('#pPin', w), pin = pinEl ? pinEl.value.trim() : '', name = qs('#pName', w).value.trim();
       try {
-        var res = await call('save_staff', { p_person: { id: isNew ? null : p.id, name: name, role: qs('#pRole', w).value, active: qs('#pActive', w).checked, can_broadcast: qs('#pBc', w).checked, position: qs('#pPos', w).value, pin: pin || null } });
+        var res = await call('save_staff', { p_person: { id: isNew ? null : p.id, name: name, role: qs('#pRole', w).value, active: qs('#pActive', w).checked, can_broadcast: qs('#pBc', w).checked, position: qs('#pPos', w).value, union_affiliation: qs('#pUnion', w).value, pin: pin || null } });
         closeSheet();
         if (isNew) {
           sheet({ title: name + ' added', body: '<p>Send <b>' + esc(name) + '</b> the app link and tell them to sign in with:</p><p class="display-5 fw-bold text-center" style="letter-spacing:.3em;color:var(--qr-dark-blue)">' + esc(res.pin || pin) + '</p>' +
@@ -1694,7 +1779,7 @@
   function msgTabs(active) {
     var nb = S.pulse.broadcasts || 0, nc = S.pulse.unread || 0;
     return '<div class="page-title"><h4>Messages</h4></div>' +
-      '<div class="seg"><a href="#/broadcasts" class="' + (active === 'bc' ? 'active' : '') + '">📣 TOI Broadcasts' + (nb ? ' <span class="badge bg-danger">' + nb + '</span>' : '') + '</a>' +
+      '<div class="seg"><a href="#/broadcasts" class="' + (active === 'bc' ? 'active' : '') + '">📣 Broadcasts' + (nb ? ' <span class="badge bg-danger">' + nb + '</span>' : '') + '</a>' +
       '<a href="#/chat" class="' + (active === 'chat' ? 'active' : '') + '">Chat' + (nc ? ' <span class="badge bg-danger">' + nc + '</span>' : '') + '</a></div>';
   }
   function fmtSize(n) { return n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; }
@@ -1705,14 +1790,14 @@
     var el = document.getElementById('bcBanner'); if (!el) return;
     var n = S.pulse.broadcasts || 0;
     el.innerHTML = n ? '<a href="#/broadcasts" class="alert alert-warning d-flex align-items-center gap-2 text-decoration-none mb-3" style="color:var(--qr-ink)">' +
-      '<span style="width:26px;flex:none;color:#9a4a10">' + I.megaphone + '</span><span class="flex-grow-1"><b>' + plural(n, 'new TOI broadcast') + '</b> — tap to read</span><span>›</span></a>' : '';
+      '<span style="width:26px;flex:none;color:#9a4a10">' + I.megaphone + '</span><span class="flex-grow-1"><b>' + plural(n, 'new broadcast') + '</b> — tap to read</span><span>›</span></a>' : '';
   }
   function maybeUrgentPopup() {
     var list = (S.pulse.urgent || []).filter(function (u) { return !S.urgentShown[u.id] && location.hash !== '#/broadcast/' + u.id; });
     if (!list.length || $sheetHost.innerHTML) return;
     var u = list[0]; S.urgentShown[u.id] = true;
     var w = sheet({
-      title: '📣 URGENT TOI BROADCAST',
+      title: '📣 URGENT ' + String(u.kind_label || 'TOI Broadcast').toUpperCase(),
       body: '<p class="fs-5 fw-bold mb-1" style="color:var(--qr-dark-blue)">' + esc(u.title) + '</p>' +
             '<p class="text-muted mb-0">From ' + esc(u.who || '—') + ' · ' + esc(when(u.at)) + '</p>' +
             (list.length > 1 ? '<p class="small mt-2 mb-0">+ ' + plural(list.length - 1, 'other urgent broadcast') + '</p>' : ''),
@@ -1725,7 +1810,7 @@
     loading();
     var r = await call('list_broadcasts');
     render(msgTabs('bc') +
-      (r.can_send ? '<a class="btn btn-primary btn-lg w-100 mb-3 d-flex align-items-center justify-content-center gap-2" href="#/broadcasts/new"><span style="width:24px">' + I.megaphone + '</span>New TOI broadcast</a>' : '') +
+      (r.can_send ? '<a class="btn btn-primary btn-lg w-100 mb-3 d-flex align-items-center justify-content-center gap-2" href="#/broadcasts/new"><span style="width:24px">' + I.megaphone + '</span>New ' + (r.send_kind === 'depot' ? 'Depot Announcement' : 'TOI Broadcast') + '</a>' : '') +
       (r.items.length ? '<div class="d-flex flex-column gap-2">' + r.items.map(function (b) {
         var needAck = !b.mine && b.require_ack && !b.acked_at, isNew = !b.mine && !b.seen_at;
         var status = b.can_manage && b.require_ack ? '<span class="badge bg-navy">' + b.ack_count + '/' + b.audience + ' acknowledged</span>'
@@ -1756,7 +1841,7 @@
     pulse();
     var needAck = !b.mine && b.require_ack && !b.acked_at;
     render('<div class="d-flex align-items-center gap-2 mb-2"><a href="#/broadcasts" class="btn btn-sm btn-outline-secondary" aria-label="Back" style="width:40px">' + I.back + '</a>' +
-        '<span class="small text-muted">TOI Broadcast</span>' + (b.urgent ? '<span class="badge bg-danger ms-auto">URGENT</span>' : '') + '</div>' +
+        '<span class="small text-muted">' + esc(b.kind_label || 'TOI Broadcast') + '</span>' + (b.urgent ? '<span class="badge bg-danger ms-auto">URGENT</span>' : '') + '</div>' +
       '<article class="card mb-3' + (b.urgent ? ' border-danger' : '') + '" style="' + (b.urgent ? 'border-left:6px solid var(--qr-red)' : 'border-left:6px solid var(--qr-light-blue)') + '"><div class="card-body">' +
         '<h4 class="mb-1">' + esc(b.title) + '</h4>' +
         '<div class="small text-muted mb-3">From <b>' + esc(b.sender) + '</b> · ' + esc(when(b.published_at)) + '</div>' +
@@ -1844,9 +1929,9 @@
   }
 
   function viewNewBroadcast() {
-    if (!S.me.can_broadcast && !isAdmin()) { location.hash = '#/broadcasts'; return; }
+    if (!S.me.can_broadcast) { location.hash = '#/broadcasts'; return; }
     var files = [];   // {file, url}
-    render('<div class="d-flex align-items-center gap-2 mb-2"><a href="#/broadcasts" class="btn btn-sm btn-outline-secondary" aria-label="Back" style="width:40px">' + I.back + '</a><h4 class="m-0">New TOI broadcast</h4></div>' +
+    render('<div class="d-flex align-items-center gap-2 mb-2"><a href="#/broadcasts" class="btn btn-sm btn-outline-secondary" aria-label="Back" style="width:40px">' + I.back + '</a><h4 class="m-0">New ' + sendLabel() + '</h4></div>' +
       '<p class="text-muted">Goes to <b>everyone</b> in Kippa Crew.</p>' +
       '<form id="bcForm" class="card mb-3"><div class="card-body">' +
         '<div class="mb-3"><label class="form-label" for="bcTitle">Title</label><input class="form-control" id="bcTitle" maxlength="150" required placeholder="e.g. Track work Saturday – Petrie to Kippa-Ring"></div>' +
@@ -1929,9 +2014,20 @@
     if (!S.pushCfg || force) { try { S.pushCfg = await call('push_config', null, { bg: true }); } catch (_) { S.pushCfg = { ready: false }; } }
     return S.pushCfg;
   }
+  // Never waits on a background helper that isn't running (that would hang sign-out)
   async function currentSub() {
     if (!pushSupported()) return null;
-    try { var reg = await navigator.serviceWorker.ready; return await reg.pushManager.getSubscription(); } catch (_) { return null; }
+    try {
+      var reg = await navigator.serviceWorker.getRegistration();
+      return reg ? await reg.pushManager.getSubscription() : null;
+    } catch (_) { return null; }
+  }
+  async function readyRegistration() {
+    var reg = await navigator.serviceWorker.getRegistration();
+    if (!reg) reg = await navigator.serviceWorker.register('sw.js');
+    return Promise.race([navigator.serviceWorker.ready, new Promise(function (_, rej) {
+      setTimeout(function () { rej(new Error('This phone couldn\'t start notifications. Close the app fully, reopen it and try again.')); }, 10000);
+    })]);
   }
   // Must be called from a button tap (iPhone requires it)
   async function enablePush() {
@@ -1944,7 +2040,7 @@
     if (!cfg.ready) return toast('Notifications aren\'t set up yet — a manager needs to connect them in Settings.', true);
     var perm = await Notification.requestPermission();
     if (perm !== 'granted') return toast(perm === 'denied' ? 'Notifications are blocked for this app. Allow them in your phone\'s settings, then try again.' : 'Notifications not turned on.', true);
-    var reg = await navigator.serviceWorker.ready;
+    var reg = await readyRegistration();
     var sub = await reg.pushManager.getSubscription();
     if (sub && sub.options && sub.options.applicationServerKey) {
       var have = new Uint8Array(sub.options.applicationServerKey), want = u8FromB64url(cfg.public_key);

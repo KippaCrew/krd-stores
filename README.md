@@ -1,6 +1,6 @@
-# KRD Stores — Kippa Ring Depot Stores
+# Kippa Crew — the Kippa Ring Depot crew app
 
-A phone app for the depot store room. It replaces the paper sign-out sheet.
+A phone app for the Kippa Ring Depot crew. Use it for the store room (it replaces the paper sign-out sheet), TOI broadcasts, group chats and app updates.
 
 - **Staff** tap their name, enter a 4-digit PIN, tap **+** on what they take, then **Log**. That takes about 10 seconds.
 - **You (manager)** get par-level reorder emails, a 7am daily summary, blind stocktakes on your phone, reports, team chat and a **TRACKS entry** sheet that totals everything you still need to key into TRACKS.
@@ -11,7 +11,7 @@ It's free to run: GitHub Pages hosts the app, Supabase stores the data and Resen
 ```
  Phone (staff / manager)                     Supabase (your free account, Sydney)
  ┌─────────────────────────┐   HTTPS/RPC    ┌──────────────────────────────────┐
- │ KRD Stores web app      │ ─────────────▶ │ Postgres database                │
+ │ Kippa Crew web app      │ ─────────────▶ │ Postgres database                │
  │ (GitHub Pages, PWA)     │                │  • secured functions (PIN login) │
  │  • works like an app    │ ◀───────────── │  • tables locked to the public   │
  │  • saves takes offline  │                │  • pg_net  → Resend → your email │
@@ -104,6 +104,28 @@ What you'll get:
 - **Staff:** go to **More → Staff → Add person**, type their name and press **Save**. They start with the **default PIN** (`0000` unless you change it in **Settings → Staff sign-in**). Send them the app link. The first time they sign in, the app makes them choose their own 4-digit PIN; easy ones like `1234` and the default PIN aren't allowed.
 - **Forgotten PIN or locked out?** Go to **Staff → their name → Reset PIN**. It goes back to the default PIN, they're signed out and unlocked, and they choose a new PIN at their next sign-in.
 
+## 6. Phone notifications (about 10 minutes)
+
+Banner notifications on phones for **new TOI broadcasts**, **new chat messages** (Team, your groups, and direct messages) and, for managers, **items dropping to par**.
+
+**a) Add the sending function in Supabase**
+1. In Supabase's left menu, go to **Edge Functions → Deploy a new function → Via Editor**.
+2. Name it exactly **`kippa-push`**.
+3. Delete the sample code, then paste in **all** of `supabase/kippa-push.ts` and click **Deploy**.
+4. Open the function's **Details** (or settings) and switch **OFF** "Verify JWT" (sometimes called "Enforce JWT verification"). Save.
+   *(It checks a private secret held by your database instead, so it's still protected.)*
+
+**b) Connect it.** In Kippa Crew, go to **More → Settings → 🔔 Phone notifications → Connect notifications**. It should say **✅ Connected**.
+This creates your project's own notification keys and stores them in your database. You don't need to copy any keys.
+
+**c) Each person turns them on**, from the prompt on their home screen or under **Me → 🔔 Turn on notifications**, then taps **Allow**.
+- **Android (Samsung, Pixel, etc.):** works in Chrome or Samsung Internet, installed or not.
+- **iPhone (iOS 16.4 or newer):** Kippa Crew must be added to the Home Screen first (Safari → Share → Add to Home Screen) and opened from there. Then turn notifications on.
+- Use **Me → Send me a test** to check.
+- **Signing out** turns notifications off for that phone, so the next person on a shared phone doesn't get someone else's messages.
+
+If a test notification doesn't arrive, check that "Verify JWT" is off and press **Re-check connection** in Settings. Supabase's **Edge Functions → kippa-push → Logs** also shows each send.
+
 ---
 
 ## How things work
@@ -117,9 +139,13 @@ What you'll get:
 | **Receiving stock** | Go to **More → Receive a delivery** and enter quantities. An optional docket number can be added. |
 | **TRACKS entry** | Shows the totals per item that you haven't entered into TRACKS yet. Use **Copy for Excel**, **CSV** or **Print**. Pressing **Mark as entered** clears them, but anything logged after you opened the page stays for next time. Put each item's TRACKS code in the item's **Code** field so it appears on the sheet. |
 | **Reports** | Covers Today, 7 days, 30 days, this month or a custom range. You can view by item, by person or all activity, and export to CSV. |
-| **TOI Broadcasts** | Go to **Messages → 📣 TOI Broadcasts → New**. Add a title and message, plus up to 6 PDFs or photos (10 MB each; photos are shrunk automatically). Tick **Require "read & understood"** to track acknowledgements, and tick **Urgent** to pop it up on everyone's screen until they've read it. The sender and managers can see live read receipts (acknowledged / opened / not opened) and can delete a broadcast for everyone. Managers can always send. To let a depot supervisor send without manager access, go to **Staff → their name → Can send TOI broadcasts**. Unread broadcasts show a banner on the home and Take screens. |
+| **TOI Broadcasts & Depot Announcements** | They work the same way: Managers (and staff ticked "Can send TOI broadcasts") send **TOI Broadcasts**, and Administrators send **Depot Announcements**. Go to **Messages → 📣 Broadcasts → New**. Add a title and message, plus up to 6 PDFs or photos (10 MB each; photos are shrunk automatically). Tick **Require "read & understood"** to track acknowledgements, and tick **Urgent** to pop it up on everyone's screen until they've read it. The sender and managers can see live read receipts (acknowledged / opened / not opened) and can delete a broadcast for everyone. Managers can always send. To let a depot supervisor send without manager access, go to **Staff → their name → Can send TOI broadcasts**. Unread broadcasts show a banner on the home and Take screens. |
+| **Item photos** | Go to **Stock → item → Add photo** and take a photo or choose one. It's shrunk automatically. Staff see it next to the item when taking stock and can tap it to see it bigger. Photos also show during stocktakes. |
+| **Positions, unions & groups** | Each person has a **Union affiliation**: **None** (default), **RTBU** or **AFULE**. RTBU and AFULE members are put in that union's chat automatically, whatever their position, and the union's logo is the chat icon. Changing the affiliation moves them; None means no union chat. Each person is also a **Driver**, **Guard** or **Other**. Drivers are put in the **Drivers** chat and Guards in the **Guards** chat automatically, and changing their position moves them. Managers aren't added unless their own position is Driver or Guard. Anyone can make their own group under **Messages → Chat → New group**. Only members can see a group. The person who made it, or a manager in it, can rename it, change its members or delete it. |
+| **What's New** | Go to **More → What's New**, write a title and points (one per line), or tap **Fill in this version's app changes**. Then **Preview** and **Post to everyone**. Each person sees it as a pop-up once and taps **Got it**. You can see "Seen by X of Y". |
+| **Someone leaves the depot** | Go to **Staff → their name → Remove (left depot)**. They're signed out straight away, disappear from the sign-in list, chats and groups, and stop counting in read receipts. Their history stays in reports and TRACKS. You can bring them back from **Former staff**. |
 | **Chat** | The **Team** channel is for everyone. Staff can message managers directly, and managers can message anyone. Unread messages show as red badges. |
-| **Roles** | **Staff** can take items, see their own history, chat and change their PIN. **Manager** can do all of that plus see stock, run stocktakes, manage items and staff, view reports and change settings. |
+| **Roles** | **Staff:** take items, see their own history, read broadcasts, chat, change their PIN. **Administrator:** everything Staff can do, plus receive deliveries, run stocktakes, manage Staff & Administrators (not Managers), send **Depot Announcements** and share the app link. Administrators don't see stock levels, Items & par levels, Import, Reports, TRACKS entry, What's New posting or Settings. **Manager:** everything, and sends **TOI Broadcasts**. Only a Manager can make someone a Manager. |
 
 ## Security
 
@@ -149,5 +175,6 @@ js/app.js               All screens
 js/demo.js              Demo-mode backend (runs in the browser)
 sw.js, manifest.webmanifest, icons/   Installable app + offline support
 supabase/schema.sql     The whole database: tables, security, functions, emails, schedule, broadcasts
+supabase/kippa-push.ts  Phone-notification sender (paste into a Supabase Edge Function)
 items-template.csv      Template for importing your item list
 ```

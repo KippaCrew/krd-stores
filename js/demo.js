@@ -4,7 +4,7 @@
 (function (global) {
   'use strict';
 
-  var KEY = 'krd_demo_v4';
+  var KEY = 'krd_demo_v6';
   var memory = null;
   var fileMem = {};   // demo attachments live in memory only (phone storage is too small for PDFs)
   var imgMem = {};    // demo item photos, same reason
@@ -21,8 +21,9 @@
 
   function seed() {
     var admin = { id: uid(), name: 'Manager (demo)', pin: '1234', role: 'admin', active: true, failed: 0, locked_until: null, last_login: null, can_broadcast: true, position: 'other' };
-    var sam = { id: uid(), name: 'Sam Smith', pin: '1111', role: 'staff', active: true, failed: 0, locked_until: null, last_login: null, position: 'driver' };
-    var alex = { id: uid(), name: 'Alex Brown', pin: '2222', role: 'staff', active: true, failed: 0, locked_until: null, last_login: null, position: 'guard' };
+    var sam = { id: uid(), name: 'Sam Smith', pin: '1111', role: 'staff', active: true, failed: 0, locked_until: null, last_login: null, position: 'driver', union_affiliation: 'rtbu' };
+    var alex = { id: uid(), name: 'Alex Brown', pin: '2222', role: 'staff', active: true, failed: 0, locked_until: null, last_login: null, position: 'guard', union_affiliation: 'afule' };
+    var pat = { id: uid(), name: 'Pat Admin (demo)', pin: '3333', role: 'administrator', active: true, failed: 0, locked_until: null, last_login: null, position: 'other' };
     var items = [
       ['Sunscreen SPF50+ 1L pump', 'Sun & Bugs', 'bottle', 9, 4, 12],
       ['Sunscreen SPF50+ 100ml tube', 'Sun & Bugs', 'tube', 22, 10, 40],
@@ -60,10 +61,11 @@
       { id: 3, sender_id: admin.id, recipient_id: null, group_id: 1, body: 'Drivers – new sunscreen pumps are on the top shelf.', created_at: new Date(t0 - 50 * 60000).toISOString() }
     ];
     return {
-      staff: [admin, sam, alex], sessions: {}, items: items, tx: tx, nextTx: id,
+      staff: [admin, sam, alex, pat], sessions: {}, items: items, tx: tx, nextTx: id,
       stocktakes: [], counts: [], msgs: msgs, nextMsg: 4, reads: {},
-      groups: [{ id: 1, name: 'Drivers', kind: 'driver', archived: false }, { id: 2, name: 'Guards', kind: 'guard', archived: false }],
-      gmembers: [], nextG: 3, itemImg: {},
+      groups: [{ id: 1, name: 'Drivers', kind: 'driver', archived: false }, { id: 2, name: 'Guards', kind: 'guard', archived: false },
+               { id: 3, name: 'RTBU', kind: 'rtbu', archived: false }, { id: 4, name: 'AFULE', kind: 'afule', archived: false }],
+      gmembers: [], nextG: 5, itemImg: {},
       notes: [{ id: 1, title: 'Welcome to Kippa Crew', created_by: admin.id, published_at: now(), deleted: false,
                 points: ['Kippa Crew is the new name for the depot app, with a new logo', 'Log anything you take from the store room — no more paper sheet',
                          'TOI Broadcasts: important notices, with PDFs and photos', 'Group chats, plus automatic Drivers and Guards chats',
@@ -95,15 +97,23 @@
     if (admin && s.role !== 'admin') fail('ADMIN_ONLY');
     return s;
   }
-  function meJson(s) { return { id: s.id, name: s.name, role: s.role, can_broadcast: s.role === 'admin' || !!s.can_broadcast, must_change_pin: !!s.must_change_pin, position: s.position || 'other' }; }
+  function authOffice(db, token) {
+    var s = auth(db, token);
+    if (s.role !== 'admin' && s.role !== 'administrator') fail('ADMIN_ONLY');
+    return s;
+  }
+  function isOfficeRole(r) { return r === 'admin' || r === 'administrator'; }
+  function kindLabel(k) { return k === 'depot' ? 'Depot Announcement' : 'TOI Broadcast'; }
+  function meJson(s) { return { id: s.id, name: s.name, role: s.role, can_broadcast: isOfficeRole(s.role) || !!s.can_broadcast, broadcast_kind: s.role === 'administrator' ? 'depot' : 'toi', must_change_pin: !!s.must_change_pin, position: s.position || 'other', union_affiliation: s.union_affiliation || 'none', union_affiliation: s.union_affiliation || 'none' }; }
   function defaultPin(db) { return /^\d{4}$/.test(db.settings.default_pin || '') ? db.settings.default_pin : '0000'; }
-  function canSend(s) { return s.role === 'admin' || !!s.can_broadcast; }
+  function canSend(s) { return isOfficeRole(s.role) || !!s.can_broadcast; }
   function bread(db, bid, sid) { return db.breads.find(function (r) { return r.broadcast_id === bid && r.staff_id === sid; }); }
   function bJson(db, b, me) {
     var manage = b.sender_id === me.id || me.role === 'admin', r = bread(db, b.id, me.id);
     var aud = db.staff.filter(function (x) { return x.active && x.id !== b.sender_id; });
     var rs = db.breads.filter(function (x) { return x.broadcast_id === b.id && aud.some(function (a) { return a.id === x.staff_id; }); });
     return { id: b.id, title: b.title, body: b.body, urgent: b.urgent, require_ack: b.require_ack, published_at: b.published_at,
+             kind: b.kind || 'toi', kind_label: kindLabel(b.kind),
              sender: staffName(db, b.sender_id), mine: b.sender_id === me.id, can_manage: manage,
              files: db.bfiles.filter(function (f) { return f.broadcast_id === b.id; }).map(function (f) { return { id: f.id, name: f.name, mime: f.mime, size: f.size }; }),
              seen_at: r ? r.seen_at : null, acked_at: r ? r.acked_at : null,
@@ -154,11 +164,12 @@
   function brisbaneDayStart(dateStr) { return new Date(dateStr + 'T00:00:00+10:00').getTime(); }
   function canChat(db, me, otherId) {
     var o = db.staff.find(function (x) { return x.id === otherId && x.active; });
-    return !!o && o.id !== me.id && (me.role === 'admin' || o.role === 'admin');
+    return !!o && o.id !== me.id && (isOfficeRole(me.role) || isOfficeRole(o.role));
   }
   function inGroup(db, st, gid) {
     var g = db.groups.find(function (x) { return x.id === gid && !x.archived; }); if (!g) return false;
     if (g.kind === 'custom') return db.gmembers.some(function (m) { return m.group_id === gid && m.staff_id === st.id; });
+    if (g.kind === 'rtbu' || g.kind === 'afule') return (st.union_affiliation || 'none') === g.kind;
     return (st.position || 'other') === g.kind;
   }
   function groupMembers(db, gid) { return db.staff.filter(function (st) { return st.active && inGroup(db, st, gid); }); }
@@ -245,6 +256,7 @@
       var sid = db.sessions[a.p_token], s = sid && db.staff.find(function (x) { return x.id === sid && x.active; });
       if (!s) fail('SESSION_EXPIRED'); return meJson(s);
     },
+    staff_default_pin: function (db, a) { authOffice(db, a.p_token); return defaultPin(db); },
     set_own_pin: function (db, a) {
       var sid = db.sessions[a.p_token], s = sid && db.staff.find(function (x) { return x.id === sid && x.active; });
       if (!s) fail('SESSION_EXPIRED');
@@ -255,9 +267,10 @@
       s.pin = a.p_new; s.must_change_pin = false; return meJson(s);
     },
     reset_pin: function (db, a) {
-      var me = auth(db, a.p_token, true);
+      var me = authOffice(db, a.p_token);
       if (a.p_staff_id === me.id) fail('To change your own PIN, use Me → Change my PIN.');
       var t = db.staff.find(function (x) { return x.id === a.p_staff_id; }); if (!t) fail('Person not found.');
+      if (me.role === 'administrator' && t.role === 'admin') fail('Only a Manager can reset a Manager\'s PIN.');
       t.pin = defaultPin(db); t.must_change_pin = true; t.failed = 0; t.locked_until = null;
       Object.keys(db.sessions).forEach(function (k) { if (db.sessions[k] === t.id) delete db.sessions[k]; });
       return { name: t.name, pin: t.pin };
@@ -271,7 +284,7 @@
           var r = bread(db, b.id, s.id);
           return b.urgent && b.sender_id !== s.id && new Date(b.published_at).getTime() > fortnight && (b.require_ack ? !(r && r.acked_at) : !(r && r.seen_at));
         }).sort(function (x, y) { return y.published_at.localeCompare(x.published_at); })
-          .map(function (b) { return { id: b.id, title: b.title, at: b.published_at, who: staffName(db, b.sender_id) }; }),
+          .map(function (b) { return { id: b.id, title: b.title, at: b.published_at, who: staffName(db, b.sender_id), kind_label: kindLabel(b.kind) }; }),
         whats_new: pendingNotes(db, s).length };
     },
     change_my_pin: function (db, a) {
@@ -378,7 +391,7 @@
       return { added: added, updated: updated };
     },
     receive_stock: function (db, a) {
-      var s = auth(db, a.p_token, true), n = 0;
+      var s = authOffice(db, a.p_token), n = 0;
       (a.p_lines || []).forEach(function (l) {
         var q = int(l.qty, 0); if (!q) return;
         if (q < 0 || q > 100000) fail('Invalid quantity.');
@@ -418,13 +431,13 @@
       return { marked: n };
     },
     start_stocktake: function (db, a) {
-      var s = auth(db, a.p_token, true), open = db.stocktakes.find(function (x) { return x.status === 'open'; });
+      var s = authOffice(db, a.p_token), open = db.stocktakes.find(function (x) { return x.status === 'open'; });
       if (open) return open.id;
       var st = { id: uid(), status: 'open', note: (a.p_note || '').trim() || null, started_by: s.id, started_at: now(), completed_by: null, completed_at: null };
       db.stocktakes.push(st); return st.id;
     },
     get_stocktake: function (db, a) {
-      auth(db, a.p_token, true);
+      authOffice(db, a.p_token);
       var st = db.stocktakes.find(function (x) { return x.status === 'open'; }); if (!st) return null;
       return { id: st.id, note: st.note, started_at: st.started_at, started_by: staffName(db, st.started_by),
                items: db.items.filter(function (i) { return i.active; }).sort(sortItems).map(function (i) {
@@ -432,7 +445,7 @@
                  return { id: i.id, name: i.name, category: i.category, unit: i.unit, counted: c ? c.counted : null, img: imgVer(i.id) }; }) };
     },
     save_count: function (db, a) {
-      var s = auth(db, a.p_token, true);
+      var s = authOffice(db, a.p_token);
       var st = db.stocktakes.find(function (x) { return x.id === a.p_stocktake_id && x.status === 'open'; });
       if (!st) fail('This stocktake is no longer open.');
       db.counts = db.counts.filter(function (c) { return !(c.stocktake_id === st.id && c.item_id === a.p_item_id); });
@@ -442,7 +455,7 @@
       db.counts.push({ stocktake_id: st.id, item_id: i.id, counted: a.p_counted, expected_at_count: i.on_hand, counted_by: s.id, counted_at: now() });
     },
     complete_stocktake: function (db, a) {
-      var s = auth(db, a.p_token, true);
+      var s = authOffice(db, a.p_token);
       var st = db.stocktakes.find(function (x) { return x.id === a.p_stocktake_id && x.status === 'open'; });
       if (!st) fail('This stocktake is no longer open.');
       db.counts.filter(function (c) { return c.stocktake_id === st.id; }).forEach(function (c) {
@@ -454,18 +467,18 @@
       return stocktakeReport(db, st);
     },
     cancel_stocktake: function (db, a) {
-      var s = auth(db, a.p_token, true), st = db.stocktakes.find(function (x) { return x.id === a.p_stocktake_id && x.status === 'open'; });
+      var s = authOffice(db, a.p_token), st = db.stocktakes.find(function (x) { return x.id === a.p_stocktake_id && x.status === 'open'; });
       if (st) { st.status = 'cancelled'; st.completed_by = s.id; st.completed_at = now(); }
     },
     stocktake_report: function (db, a) {
-      auth(db, a.p_token, true);
+      authOffice(db, a.p_token);
       var st = db.stocktakes.find(function (x) { return x.id === a.p_stocktake_id; });
       if (!st) fail('Stocktake not found.');
       if (st.status === 'open') fail('Results are hidden until the stocktake is completed.');
       return stocktakeReport(db, st);
     },
     list_stocktakes: function (db, a) {
-      auth(db, a.p_token, true);
+      authOffice(db, a.p_token);
       return db.stocktakes.slice().sort(function (x, y) { return y.started_at.localeCompare(x.started_at); }).map(function (st) {
         var c = db.counts.filter(function (c) { return c.stocktake_id === st.id; });
         return { id: st.id, status: st.status, note: st.note, started_at: st.started_at, completed_at: st.completed_at, started_by: staffName(db, st.started_by),
@@ -473,26 +486,35 @@
       });
     },
     list_staff: function (db, a) {
-      auth(db, a.p_token, true);
-      return db.staff.map(function (s) { return { id: s.id, name: s.name, role: s.role, active: s.active, last_login: s.last_login || null, can_broadcast: !!s.can_broadcast, must_change_pin: !!s.must_change_pin, position: s.position || 'other',
+      authOffice(db, a.p_token);
+      return db.staff.map(function (s) { return { id: s.id, name: s.name, role: s.role, active: s.active, last_login: s.last_login || null, can_broadcast: !!s.can_broadcast, must_change_pin: !!s.must_change_pin, position: s.position || 'other', union_affiliation: s.union_affiliation || 'none',
         locked: !!(s.locked_until && new Date(s.locked_until) > new Date()) }; })
         .sort(function (x, y) { return (y.active - x.active) || lc(x.name).localeCompare(lc(y.name)); });
     },
     save_staff: function (db, a) {
-      var me = auth(db, a.p_token, true), p = a.p_person || {}, name = String(p.name || '').trim();
+      var me = authOffice(db, a.p_token), p = a.p_person || {}, name = String(p.name || '').trim();
       if (!name) fail('Name is required.');
       if (p.pin && !/^[0-9]{4,8}$/.test(p.pin)) fail('PIN must be 4 to 8 digits.');
       var role = p.role || 'staff', active = p.active !== false, pos = p.position || 'other';
+      if (['staff', 'administrator', 'admin'].indexOf(role) < 0) fail('Invalid role.');
+      var target = p.id ? db.staff.find(function (x) { return x.id === p.id; }) : null;
+      if (me.role === 'administrator') {
+        if (role === 'admin') fail('Only a Manager can make someone a Manager.');
+        if (target && target.role === 'admin') fail('Only a Manager can change a Manager\'s details.');
+        p.can_broadcast = target ? !!target.can_broadcast : false;
+      }
       if (['driver', 'guard', 'other'].indexOf(pos) < 0) fail('Position must be Driver, Guard or Other.');
+      var uni = p.union_affiliation || 'none';
+      if (['none', 'rtbu', 'afule'].indexOf(uni) < 0) fail('Union affiliation must be None, RTBU or AFULE.');
       if (db.staff.some(function (x) { return lc(x.name) === lc(name) && x.id !== p.id; })) fail('Someone with that name already exists.');
       if (!p.id) {
         var pin = p.pin || defaultPin(db);
-        var s = { id: uid(), name: name, pin: pin, role: role, active: active, failed: 0, locked_until: null, last_login: null, can_broadcast: !!p.can_broadcast, must_change_pin: true, position: pos, created_at: now() };
+        var s = { id: uid(), name: name, pin: pin, role: role, active: active, failed: 0, locked_until: null, last_login: null, can_broadcast: !!p.can_broadcast, must_change_pin: true, position: pos, union_affiliation: uni, created_at: now() };
         db.staff.push(s); return { id: s.id, pin: pin };
       }
-      if (p.id === me.id && (role !== 'admin' || !active)) fail('You cannot remove your own admin access.');
+      if (p.id === me.id && (role !== me.role || !active)) fail('You can\'t change your own access level or remove yourself.');
       var t = db.staff.find(function (x) { return x.id === p.id; });
-      t.name = name; t.role = role; t.active = active; t.can_broadcast = !!p.can_broadcast; t.position = pos;
+      t.name = name; t.role = role; t.active = active; t.can_broadcast = !!p.can_broadcast; t.position = pos; t.union_affiliation = uni;
       if (p.pin) { t.pin = p.pin; t.failed = 0; t.locked_until = null; if (t.id !== me.id) t.must_change_pin = true; }
       if (!active || p.pin) Object.keys(db.sessions).forEach(function (k) { if (db.sessions[k] === t.id && t.id !== me.id) delete db.sessions[k]; });
       if (!active) db.gmembers = db.gmembers.filter(function (m) { return m.staff_id !== t.id; });
@@ -554,7 +576,7 @@
       var s = auth(db, a.p_token);
       if (!canSend(s)) fail('You are not allowed to send TOI broadcasts.');
       if (!String(a.p_title || '').trim()) fail('Give the broadcast a title.');
-      var b = { id: db.nextB++, sender_id: s.id, title: String(a.p_title).trim().slice(0, 150), body: String(a.p_body || '').trim().slice(0, 5000),
+      var b = { id: db.nextB++, sender_id: s.id, kind: s.role === 'administrator' ? 'depot' : 'toi', title: String(a.p_title).trim().slice(0, 150), body: String(a.p_body || '').trim().slice(0, 5000),
                 urgent: !!a.p_urgent, require_ack: a.p_require_ack !== false, published: false, deleted: false, created_at: now(), published_at: null };
       db.broadcasts.push(b); return b.id;
     },
@@ -578,7 +600,7 @@
     },
     list_broadcasts: function (db, a) {
       var s = auth(db, a.p_token);
-      return { can_send: canSend(s), items: liveB(db).sort(function (x, y) { return y.published_at.localeCompare(x.published_at); }).slice(0, 100).map(function (b) { return bJson(db, b, s); }) };
+      return { can_send: canSend(s), send_kind: s.role === 'administrator' ? 'depot' : 'toi', items: liveB(db).sort(function (x, y) { return y.published_at.localeCompare(x.published_at); }).slice(0, 100).map(function (b) { return bJson(db, b, s); }) };
     },
     get_broadcast: function (db, a) {
       var s = auth(db, a.p_token), b = liveB(db).find(function (x) { return x.id === a.p_broadcast_id; });
@@ -655,7 +677,7 @@
     },
     leave_group: function (db, a) {
       var s = auth(db, a.p_token), gid = checkConvo(db, s, a.p_key), g = db.groups.find(function (x) { return x.id === gid; });
-      if (gid == null || g.kind !== 'custom') fail('You are in this group because of your position, so you can\'t leave it.');
+      if (gid == null || g.kind !== 'custom') fail('This chat is set automatically by position or union, so you can\'t leave it.');
       db.gmembers = db.gmembers.filter(function (m) { return !(m.group_id === gid && m.staff_id === s.id); });
       if (!groupMembers(db, gid).length) g.archived = true;
     },

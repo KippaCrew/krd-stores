@@ -1,5 +1,5 @@
 /* =====================================================================
-   KRD Stores — styled after TRACKS (Atkinson Hyperlegible, teal/navy,
+   Kippa Crew — styled after TRACKS (Atkinson Hyperlegible, teal/navy,
    sand ground, slanted header band). Mobile-first.
    ===================================================================== */
 :root {
@@ -406,3 +406,27 @@ details > summary { cursor: pointer; color: var(--qr-light-blue); font-weight: 7
   .table-stack thead { display: table-header-group !important; }
 }
 @media (prefers-reduced-motion: reduce) { * { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+
+/* ---------- Item photos ---------- */
+.thumb { flex: none; width: 52px; height: 52px; border-radius: .4rem; overflow: hidden; border: 1px solid var(--qr-line); background: var(--qr-stripe); padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.thumb-empty { color: var(--qr-dark-grey); border-style: dashed; }
+.thumb-empty svg { width: 24px; height: 24px; }
+.item-row .thumb { margin-left: -.35rem; }
+.item-photo { display: flex; gap: .9rem; align-items: center; }
+.item-photo-box { width: 120px; height: 120px; flex: none; border: 2px dashed var(--qr-field-line); border-radius: .5rem; display: flex; align-items: center; justify-content: center; overflow: hidden; background: var(--qr-stripe); }
+.item-photo-box img { width: 100%; height: 100%; object-fit: cover; }
+
+/* ---------- Group chats ---------- */
+.avatar.group { border-radius: .6rem; background: var(--qr-dark-green); color: #000; font-size: .75rem; }
+.avatar.group.sys { background: var(--qr-yellow); color: #000; }
+
+/* ---------- What's New ---------- */
+.wn-title { font-weight: 700; font-size: 1.15rem; color: var(--qr-dark-blue); }
+.wn-points { margin: 0; padding-left: 1.2rem; }
+.wn-points li { margin-bottom: .45rem; line-height: 1.45; }
+.wn-points li::marker { color: var(--qr-light-blue); }
+.sheet.is-locked .sheet-head { background: var(--qr-dark-blue); }
+
+.avatar.group.union { background: #fff; border: 1px solid var(--qr-line); padding: 0; overflow: hidden; }
+.avatar.group.union img { width: 100%; height: 100%; object-fit: contain; border-radius: 50%; }
