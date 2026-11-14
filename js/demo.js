@@ -65,7 +65,7 @@
                      created_at: new Date(t0 - 2 * 3600000).toISOString(), published_at: new Date(t0 - 2 * 3600000).toISOString() }],
       bfiles: [], breads: [{ broadcast_id: 1, staff_id: admin.id, seen_at: now(), acked_at: now() }], nextB: 2, nextF: 1,
       settings: { alert_email: '', resend_api_key: '', email_from: 'Kippa Ring Depot Stores <onboarding@resend.dev>',
-                  instant_alerts: 'true', daily_summary: 'true', app_url: '' },
+                  instant_alerts: 'true', daily_summary: 'true', app_url: '', default_pin: '0000' },
       emails: []
     };
   }
@@ -82,10 +82,12 @@
     var sid = db.sessions[token];
     var s = sid && db.staff.find(function (x) { return x.id === sid && x.active; });
     if (!s) fail('SESSION_EXPIRED');
+    if (s.must_change_pin) fail('PIN_CHANGE_REQUIRED');
     if (admin && s.role !== 'admin') fail('ADMIN_ONLY');
     return s;
   }
-  function meJson(s) { return { id: s.id, name: s.name, role: s.role, can_broadcast: s.role === 'admin' || !!s.can_broadcast }; }
+  function meJson(s) { return { id: s.id, name: s.name, role: s.role, can_broadcast: s.role === 'admin' || !!s.can_broadcast, must_change_pin: !!s.must_change_pin }; }
+  function defaultPin(db) { return /^\d{4}$/.test(db.settings.default_pin || '') ? db.settings.default_pin : '0000'; }
   function canSend(s) { return s.role === 'admin' || !!s.can_broadcast; }
   function bread(db, bid, sid) { return db.breads.find(function (r) { return r.broadcast_id === bid && r.staff_id === sid; }); }
   function bJson(db, b, me) {
@@ -180,7 +182,27 @@
       return { token: t, me: meJson(s) };
     },
     logout: function (db, a) { delete db.sessions[a.p_token]; },
-    me: function (db, a) { var s = auth(db, a.p_token); return meJson(s); },
+    me: function (db, a) {
+      var sid = db.sessions[a.p_token], s = sid && db.staff.find(function (x) { return x.id === sid && x.active; });
+      if (!s) fail('SESSION_EXPIRED'); return meJson(s);
+    },
+    set_own_pin: function (db, a) {
+      var sid = db.sessions[a.p_token], s = sid && db.staff.find(function (x) { return x.id === sid && x.active; });
+      if (!s) fail('SESSION_EXPIRED');
+      if (!s.must_change_pin) fail('Use Me → Change my PIN instead.');
+      if (!/^\d{4}$/.test(a.p_new || '')) fail('PIN must be 4 digits.');
+      if (a.p_new === s.pin) fail('Choose a PIN that is different from your temporary PIN.');
+      if (['0000','1111','2222','3333','4444','5555','6666','7777','8888','9999','1234','4321', defaultPin(db)].indexOf(a.p_new) >= 0) fail('That PIN is too easy to guess. Please choose another.');
+      s.pin = a.p_new; s.must_change_pin = false; return meJson(s);
+    },
+    reset_pin: function (db, a) {
+      var me = auth(db, a.p_token, true);
+      if (a.p_staff_id === me.id) fail('To change your own PIN, use Me → Change my PIN.');
+      var t = db.staff.find(function (x) { return x.id === a.p_staff_id; }); if (!t) fail('Person not found.');
+      t.pin = defaultPin(db); t.must_change_pin = true; t.failed = 0; t.locked_until = null;
+      Object.keys(db.sessions).forEach(function (k) { if (db.sessions[k] === t.id) delete db.sessions[k]; });
+      return { name: t.name, pin: t.pin };
+    },
     heartbeat: function (db, a) {
       var s = auth(db, a.p_token);
       var fortnight = Date.now() - 14 * 86400000;
@@ -392,7 +414,7 @@
     },
     list_staff: function (db, a) {
       auth(db, a.p_token, true);
-      return db.staff.map(function (s) { return { id: s.id, name: s.name, role: s.role, active: s.active, last_login: s.last_login || null, can_broadcast: !!s.can_broadcast,
+      return db.staff.map(function (s) { return { id: s.id, name: s.name, role: s.role, active: s.active, last_login: s.last_login || null, can_broadcast: !!s.can_broadcast, must_change_pin: !!s.must_change_pin,
         locked: !!(s.locked_until && new Date(s.locked_until) > new Date()) }; })
         .sort(function (x, y) { return (y.active - x.active) || lc(x.name).localeCompare(lc(y.name)); });
     },
@@ -403,27 +425,28 @@
       var role = p.role || 'staff', active = p.active !== false;
       if (db.staff.some(function (x) { return lc(x.name) === lc(name) && x.id !== p.id; })) fail('Someone with that name already exists.');
       if (!p.id) {
-        if (!p.pin) fail('Set a PIN for the new person.');
-        var s = { id: uid(), name: name, pin: p.pin, role: role, active: active, failed: 0, locked_until: null, last_login: null, can_broadcast: !!p.can_broadcast };
-        db.staff.push(s); return { id: s.id };
+        var pin = p.pin || defaultPin(db);
+        var s = { id: uid(), name: name, pin: pin, role: role, active: active, failed: 0, locked_until: null, last_login: null, can_broadcast: !!p.can_broadcast, must_change_pin: true };
+        db.staff.push(s); return { id: s.id, pin: pin };
       }
       if (p.id === me.id && (role !== 'admin' || !active)) fail('You cannot remove your own admin access.');
       var t = db.staff.find(function (x) { return x.id === p.id; });
       t.name = name; t.role = role; t.active = active; t.can_broadcast = !!p.can_broadcast;
-      if (p.pin) { t.pin = p.pin; t.failed = 0; t.locked_until = null; }
+      if (p.pin) { t.pin = p.pin; t.failed = 0; t.locked_until = null; if (t.id !== me.id) t.must_change_pin = true; }
       if (!active || p.pin) Object.keys(db.sessions).forEach(function (k) { if (db.sessions[k] === t.id && t.id !== me.id) delete db.sessions[k]; });
       return { id: t.id };
     },
     get_settings: function (db, a) {
       auth(db, a.p_token, true); var st = db.settings, k = st.resend_api_key || '';
       return { alert_email: st.alert_email, email_from: st.email_from, instant_alerts: st.instant_alerts === 'true', daily_summary: st.daily_summary === 'true',
-               app_url: st.app_url, resend_key_set: !!k, resend_key_hint: k.length > 6 ? '••••' + k.slice(-4) : '',
+               app_url: st.app_url, default_pin: defaultPin(db), resend_key_set: !!k, resend_key_hint: k.length > 6 ? '••••' + k.slice(-4) : '',
                email_ready: !!(k && st.alert_email), cron_ready: true, net_ready: true };
     },
     save_settings: function (db, a) {
       auth(db, a.p_token, true); var p = a.p_settings || {};
       ['alert_email', 'email_from', 'app_url'].forEach(function (k) { if (k in p) db.settings[k] = String(p[k] || '').trim(); });
       ['instant_alerts', 'daily_summary'].forEach(function (k) { if (k in p) db.settings[k] = p[k] ? 'true' : 'false'; });
+      if ('default_pin' in p) { if (!/^\d{4}$/.test(p.default_pin || '')) fail('Default PIN must be 4 digits.'); db.settings.default_pin = p.default_pin; }
       if (String(p.resend_api_key || '').trim()) db.settings.resend_api_key = String(p.resend_api_key).trim();
     },
     send_test_email: function (db, a) {

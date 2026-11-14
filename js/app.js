@@ -30,7 +30,7 @@
     fileCache: {},            // attachment id -> blob URL
     chatTimer: null,
     viewCleanup: null,
-    lastSeq: 0
+    defaultPin: '0000'
   };
   var isAdmin = function () { return S.me && S.me.role === 'admin'; };
 
@@ -77,19 +77,24 @@
   async function call(fn, args, opts) {
     args = args || {};
     if (S.token && !('p_token' in args) && !(opts && opts.noToken)) args.p_token = S.token;
+    // A screen's request that finishes after the user has moved to another
+    // screen throws 'stale', which quietly stops that old screen from drawing.
+    // Background work (polling, uploads, offline sync) passes {bg:true} and always completes.
     var started = routeSeq, bg = !!(opts && opts.bg);
+    function stale() { var x = new Error('stale view'); x.kind = 'stale'; return x; }
     try {
       var out = await api.rpc(fn, args);
-      if (!bg) S.lastSeq = started;   // render() uses this to drop results for a screen the user already left
-      return out;
     } catch (e) {
-      if (!bg) S.lastSeq = started;
       if (e.kind === 'session') { signOutLocal(); toast(e.message, true); route(); }
+      if (e.kind === 'pin' && S.me) { S.me.must_change_pin = true; LS.set('me', S.me); route(); }
+      if (!bg && started !== routeSeq && e.kind !== 'session' && e.kind !== 'pin') throw stale();
       throw e;
     }
+    if (!bg && started !== routeSeq) throw stale();
+    return out;
   }
   window.addEventListener('unhandledrejection', function (ev) { if (ev.reason && ev.reason.kind === 'stale') ev.preventDefault(); });
-  function errToast(e) { if (e && e.kind !== 'session' && e.kind !== 'stale') toast(e.message || String(e), true); }
+  function errToast(e) { if (e && e.kind !== 'session' && e.kind !== 'stale' && e.kind !== 'pin') toast(e.message || String(e), true); }
 
   function csvCell(v) { var s = String(v == null ? '' : v); return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
   function toCsv(rows) { return rows.map(function (r) { return r.map(csvCell).join(','); }).join('\r\n'); }
@@ -238,7 +243,7 @@
     ];
   }
   function renderNav() {
-    var items = navItems(), h = location.hash || '#/';
+    var items = (S.me && S.me.must_change_pin) ? [] : navItems(), h = location.hash || '#/';
     if (!items.length) { $nav.classList.add('d-none'); $topRight.innerHTML = ''; return; }
     $nav.classList.remove('d-none');
     $nav.innerHTML = items.map(function (n) {
@@ -281,11 +286,11 @@
   var routeSeq = 0;
   async function route() {
     var seq = ++routeSeq;
-    S.lastSeq = seq;
     if (S.viewCleanup) { try { S.viewCleanup(); } catch (_) {} S.viewCleanup = null; }
     closeSheet();
     renderNav();
     if (!S.token || !S.me) { try { await viewSignIn(); } catch (e) { if (e.kind !== 'stale') errToast(e); } return; }
+    if (S.me.must_change_pin) { $nav.classList.add('d-none'); viewSetOwnPin(); return; }
     var h = location.hash || '#/';
     for (var i = 0; i < ROUTES.length; i++) {
       var m = h.match(ROUTES[i][0]);
@@ -302,9 +307,6 @@
   // Each render swaps in a fresh <main> so event handlers from the previous
   // screen can never pile up, and stops any timers that screen left running.
   function render(html) {
-    if (S.lastSeq !== routeSeq) {
-      var stale = new Error('stale view'); stale.kind = 'stale'; throw stale;   // user already moved on
-    }
     if (S.viewCleanup) { var c = S.viewCleanup; S.viewCleanup = null; try { c(); } catch (_) {} }
     var fresh = $app.cloneNode(false);
     fresh.innerHTML = html;
@@ -413,6 +415,57 @@
     };
     document.addEventListener('keydown', kbHandler);
     S.viewCleanup = function () { document.removeEventListener('keydown', kbHandler); };
+  }
+
+  // First sign-in / after a reset: choose your own PIN (keypad, entered twice)
+  function viewSetOwnPin() {
+    var first = null, pin = '', busy = false;
+    function screen() {
+      render('<div class="signin-wrap text-center">' +
+        '<span class="avatar mb-2" style="width:3.4rem;height:3.4rem;font-size:1.2rem">' + esc(initials(S.me.name)) + '</span>' +
+        '<h4 class="mb-0 text-center">' + (first ? 'Enter it again' : 'Welcome, ' + esc(S.me.name.split(' ')[0]) + '!') + '</h4>' +
+        '<p class="text-muted text-center mb-0">' + (first ? 'Type your new PIN once more to confirm' : 'Choose your own 4-digit PIN. You\'ll use it every time you sign in.') + '</p>' +
+        '<div class="pin-dots" id="dots"><span></span><span></span><span></span><span></span></div>' +
+        '<div class="small text-danger mb-2 text-center" id="pinErr" role="alert" style="min-height:1.4em"></div>' +
+        '<div class="keypad">' + [1, 2, 3, 4, 5, 6, 7, 8, 9].map(function (n) { return '<button type="button" data-k="' + n + '">' + n + '</button>'; }).join('') +
+          '<button type="button" class="k-fn" id="spCancel">' + (first ? 'Start again' : 'Sign out') + '</button><button type="button" data-k="0">0</button>' +
+          '<button type="button" class="k-fn" data-k="del" aria-label="Delete">⌫</button></div>' +
+        '<p class="small text-muted mt-3 text-center">Don\'t use 1234, 0000 or your temporary PIN.</p></div>');
+      pin = '';
+      on($app, 'click', '[data-k]', function (e, b) { press(b.getAttribute('data-k')); });
+      qs('#spCancel').addEventListener('click', async function () {
+        if (first) { first = null; screen(); return; }
+        try { await call('logout'); } catch (_) {}
+        signOutLocal(); route();
+      });
+    }
+    function paint() { qsa('#dots span').forEach(function (d, i) { d.classList.toggle('on', i < pin.length); }); }
+    function shake(msg) {
+      qs('#pinErr').textContent = msg; var d = qs('#dots'); d.classList.remove('shake'); void d.offsetWidth; d.classList.add('shake'); pin = ''; paint();
+    }
+    async function press(k) {
+      if (busy) return;
+      qs('#pinErr').textContent = '';
+      if (k === 'del') pin = pin.slice(0, -1); else if (pin.length < 4) pin += k;
+      paint();
+      if (pin.length < 4) return;
+      if (!first) { first = pin; screen(); return; }
+      if (pin !== first) { first = null; screen(); qs('#pinErr').textContent = 'Those didn\'t match. Let\'s try again.'; return; }
+      busy = true;
+      try {
+        S.me = await call('set_own_pin', { p_new: pin }); LS.set('me', S.me);
+        toast('PIN set — welcome aboard!');
+        location.hash = isAdmin() ? '#/' : '#/take'; route(); pulse();
+      } catch (e) { first = null; screen(); qs('#pinErr').textContent = e.message; }
+      finally { busy = false; }
+    }
+    var kb = function (e) {
+      if (!qs('#dots')) { document.removeEventListener('keydown', kb); return; }
+      if (/^[0-9]$/.test(e.key)) press(e.key); else if (e.key === 'Backspace') press('del');
+    };
+    screen();
+    document.addEventListener('keydown', kb);
+    S.viewCleanup = function () { document.removeEventListener('keydown', kb); };
   }
 
   function viewSetup() {
@@ -1237,14 +1290,16 @@
   async function viewStaff() {
     loading();
     var list = await call('list_staff');
+    var st = await call('get_settings'); S.defaultPin = st.default_pin || '0000';
     render('<div class="page-title"><h4>Staff</h4><button class="btn btn-primary" id="addP">+ Add person</button></div>' +
       '<p class="text-muted" style="margin-top:-.5rem">Everyone signs in by tapping their name and entering their 4-digit PIN.</p>' +
       '<div class="list">' + list.map(function (p) {
         return '<button class="list-row" data-p="' + p.id + '"' + (p.active ? '' : ' style="opacity:.55"') + '><span class="avatar' + (p.role === 'admin' ? ' admin' : '') + '">' + esc(initials(p.name)) + '</span>' +
           '<div class="grow"><div class="ttl">' + esc(p.name) + '</div><div class="sub">' + (p.last_login ? 'Last signed in ' + esc(ago(p.last_login)) : 'Never signed in') + '</div></div>' +
-          (p.locked ? '<span class="badge bg-danger">Locked</span> ' : '') + (p.active && p.role !== 'admin' && p.can_broadcast ? '<span class="badge bg-info me-1">Broadcaster</span>' : '') + (!p.active ? '<span class="badge bg-secondary">Inactive</span>' : p.role === 'admin' ? '<span class="badge bg-navy">Manager</span>' : '') + '</button>';
+          (p.locked ? '<span class="badge bg-danger">Locked</span> ' : '') + (p.active && p.must_change_pin ? '<span class="badge bg-warning me-1">New PIN needed</span>' : '') + (p.active && p.role !== 'admin' && p.can_broadcast ? '<span class="badge bg-info me-1">Broadcaster</span>' : '') + (!p.active ? '<span class="badge bg-secondary">Inactive</span>' : p.role === 'admin' ? '<span class="badge bg-navy">Manager</span>' : '') + '</button>';
       }).join('') + '</div>' +
-      '<div class="alert alert-secondary mt-3 small mb-0"><b>Tip:</b> after adding people, send them the app link. On first open they tap their name and enter the PIN you gave them, then can change it under <b>Me</b>.</div>');
+      '<div class="alert alert-secondary mt-3 small mb-0">New people start with the default PIN <b>' + esc(S.defaultPin) + '</b> (change it in <a href="#/settings">Settings</a>). ' +
+      'The first time they sign in, the app makes them choose their own. If someone forgets their PIN, tap their name → <b>Reset PIN</b>.</div>');
     qs('#addP').addEventListener('click', function () { editPerson(null); });
     on($app, 'click', '[data-p]', function (e, b) { editPerson(list.find(function (x) { return x.id === b.getAttribute('data-p'); })); });
   }
@@ -1255,8 +1310,11 @@
       body: '<form id="pForm" class="row g-3">' +
         '<div class="col-12"><label class="form-label" for="pName">Name</label><input class="form-control" id="pName" required value="' + esc(p.name) + '" autocomplete="off"><div class="form-text">As it should appear on the sign-in screen.</div></div>' +
         '<div class="col-6"><label class="form-label" for="pRole">Access</label><select class="form-select" id="pRole"><option value="staff"' + (p.role === 'staff' ? ' selected' : '') + '>Staff</option><option value="admin"' + (p.role === 'admin' ? ' selected' : '') + '>Manager</option></select></div>' +
-        '<div class="col-6"><label class="form-label" for="pPin">' + (isNew ? 'PIN (4 digits)' : 'New PIN') + '</label><input class="form-control" id="pPin" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" ' + (isNew ? 'required ' : '') + 'placeholder="' + (isNew ? '' : 'leave blank') + '" autocomplete="off">' +
-          (isNew ? '<button type="button" class="btn btn-link btn-sm px-0" id="pGen">Make one up</button>' : '<div class="form-text">Fills in to reset & unlock</div>') + '</div>' +
+        (isNew ? '<div class="col-6"><label class="form-label" for="pPin">Starting PIN</label><input class="form-control" id="pPin" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" placeholder="' + esc(S.defaultPin || '0000') + '" autocomplete="off">' +
+          '<div class="form-text">Blank = default PIN</div></div>'
+               : '<div class="col-6"><div class="form-label">PIN</div>' + (p.id === S.me.id ? '<a class="btn btn-outline-secondary w-100" href="#/me">Change mine</a>' : '<button type="button" class="btn btn-outline-danger w-100" id="pReset">Reset PIN</button>') +
+          '<div class="form-text">' + (p.locked ? '<span class="text-danger fw-bold">Locked out</span> — reset unlocks' : p.must_change_pin ? 'Hasn\'t chosen their own yet' : 'Forgotten? Reset it') + '</div></div>') +
+        (isNew ? '<div class="col-12 small text-muted" style="margin-top:.25rem">They\'ll choose their own PIN the first time they sign in.</div>' : '') +
         '<div class="col-12" id="pBcWrap"><div class="form-check form-switch"><input class="form-check-input" type="checkbox" role="switch" id="pBc"' + (p.can_broadcast ? ' checked' : '') + '><label class="form-check-label" for="pBc"><b>Can send TOI broadcasts</b> (e.g. depot supervisor)</label></div></div>' +
         '<div class="col-12"><div class="form-check form-switch"><input class="form-check-input" type="checkbox" role="switch" id="pActive"' + (p.active ? ' checked' : '') + '><label class="form-check-label" for="pActive">Active (can sign in)</label></div></div>' +
         '<div class="col-12 small text-muted">Managers can see stock levels, do stocktakes, change items, read everyone\'s activity and send TOI broadcasts.</div>' +
@@ -1265,16 +1323,24 @@
     });
     function bcVis() { var adm = qs('#pRole', w).value === 'admin'; qs('#pBcWrap', w).classList.toggle('d-none', adm); }
     qs('#pRole', w).addEventListener('change', bcVis); bcVis();
-    var g = qs('#pGen', w); if (g) g.addEventListener('click', function () { qs('#pPin', w).value = String(Math.floor(1000 + Math.random() * 9000)); });
+    var rb = qs('#pReset', w);
+    if (rb) rb.addEventListener('click', async function () {
+      if (!(await confirmSheet('Reset ' + p.name + '\'s PIN?', '<p>Their PIN goes back to the default PIN <b>' + esc(S.defaultPin || '0000') + '</b> and they\'re signed out on their phone. When they next sign in, they\'ll choose a new PIN.</p>', 'Reset PIN', true))) return;
+      try {
+        var r = await call('reset_pin', { p_staff_id: p.id });
+        sheet({ title: 'PIN reset', body: '<p>Tell <b>' + esc(r.name) + '</b> to sign in with:</p><p class="display-5 fw-bold text-center" style="letter-spacing:.3em;color:var(--qr-dark-blue)">' + esc(r.pin) + '</p>' +
+          '<p class="small text-muted mb-0">They\'ll be asked to choose a new PIN straight away.</p>', foot: '<button class="btn btn-primary" data-close>Done</button>', onClose: route });
+      } catch (err) { errToast(err); }
+    });
     qs('#pSave', w).addEventListener('click', async function () {
       if (!qs('#pForm', w).reportValidity()) return;
-      var pin = qs('#pPin', w).value.trim(), name = qs('#pName', w).value.trim();
+      var pinEl = qs('#pPin', w), pin = pinEl ? pinEl.value.trim() : '', name = qs('#pName', w).value.trim();
       try {
-        await call('save_staff', { p_person: { id: isNew ? null : p.id, name: name, role: qs('#pRole', w).value, active: qs('#pActive', w).checked, can_broadcast: qs('#pBc', w).checked, pin: pin || null } });
+        var res = await call('save_staff', { p_person: { id: isNew ? null : p.id, name: name, role: qs('#pRole', w).value, active: qs('#pActive', w).checked, can_broadcast: qs('#pBc', w).checked, pin: pin || null } });
         closeSheet();
-        if (pin) {
-          sheet({ title: 'Saved', body: '<p>Give <b>' + esc(name) + '</b> their PIN:</p><p class="display-5 fw-bold text-center" style="letter-spacing:.3em;color:var(--qr-dark-blue)">' + esc(pin) + '</p>' +
-            '<p class="small text-muted mb-0">It won\'t be shown again. They can change it under <b>Me</b>.</p>', foot: '<button class="btn btn-primary" data-close>Done</button>', onClose: route });
+        if (isNew) {
+          sheet({ title: name + ' added', body: '<p>Send <b>' + esc(name) + '</b> the app link and tell them to sign in with:</p><p class="display-5 fw-bold text-center" style="letter-spacing:.3em;color:var(--qr-dark-blue)">' + esc(res.pin || pin) + '</p>' +
+            '<p class="small text-muted mb-0">The first time they sign in, they\'ll choose their own PIN.</p>', foot: '<button class="btn btn-primary" data-close>Done</button>', onClose: route });
         } else { toast('Saved'); route(); }
       } catch (err) { errToast(err); }
     });
@@ -1295,6 +1361,9 @@
         '<div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" role="switch" id="sInstant"' + (s.instant_alerts ? ' checked' : '') + '><label class="form-check-label" for="sInstant"><b>Instant alert</b> when an item reaches its par level</label></div>' +
         '<div class="form-check form-switch mb-0"><input class="form-check-input" type="checkbox" role="switch" id="sDaily"' + (s.daily_summary ? ' checked' : '') + '><label class="form-check-label" for="sDaily"><b>Daily summary</b> at 7:00am (reorder list + what was taken yesterday)</label></div>' +
       '</div></div>' +
+      '<div class="card mb-3"><div class="card-header">Staff sign-in</div><div class="card-body">' +
+        '<label class="form-label" for="sDefPin">Default PIN for new staff & PIN resets</label><input class="form-control" id="sDefPin" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" required value="' + esc(s.default_pin || '0000') + '" style="max-width:9rem">' +
+        '<div class="form-text">People sign in with this once, then must choose their own PIN.</div></div></div>' +
       '<div class="card mb-3"><div class="card-header">Email sending (Resend)</div><div class="card-body">' +
         '<div class="mb-3"><label class="form-label" for="sKey">Resend API key</label><input class="form-control" id="sKey" type="password" autocomplete="off" placeholder="' + (s.resend_key_set ? 'Saved (' + esc(s.resend_key_hint) + ') — paste to replace' : 're_...') + '">' +
           '<div class="form-text">Free at resend.com — see the setup guide. Stored in your database, never shown again.</div></div>' +
@@ -1323,7 +1392,7 @@
       e.preventDefault();
       try {
         await call('save_settings', { p_settings: { alert_email: qs('#sEmail').value, instant_alerts: qs('#sInstant').checked, daily_summary: qs('#sDaily').checked,
-          resend_api_key: qs('#sKey').value, email_from: qs('#sFrom').value, app_url: qs('#sUrl').value } });
+          resend_api_key: qs('#sKey').value, email_from: qs('#sFrom').value, app_url: qs('#sUrl').value, default_pin: qs('#sDefPin').value } });
         toast('Settings saved'); viewSettings();
       } catch (err) { errToast(err); }
     });
@@ -1537,13 +1606,13 @@
       var btn = qs('#bcSend'), prog = qs('#bcProgress'); btn.disabled = true;
       try {
         prog.textContent = 'Creating broadcast…';
-        var id = await call('create_broadcast', { p_title: qs('#bcTitle').value, p_body: qs('#bcBody').value, p_urgent: urgent, p_require_ack: ack });
+        var id = await call('create_broadcast', { p_title: qs('#bcTitle').value, p_body: qs('#bcBody').value, p_urgent: urgent, p_require_ack: ack }, { bg: true });
         for (var i = 0; i < files.length; i++) {
           prog.textContent = 'Uploading ' + (i + 1) + ' of ' + files.length + ' — ' + files[i].file.name + '…';
-          await call('add_broadcast_file', { p_broadcast_id: id, p_name: files[i].file.name, p_mime: files[i].file.type, p_data: await toBase64(files[i].file) });
+          await call('add_broadcast_file', { p_broadcast_id: id, p_name: files[i].file.name, p_mime: files[i].file.type, p_data: await toBase64(files[i].file) }, { bg: true });
         }
         prog.textContent = 'Sending…';
-        await call('publish_broadcast', { p_broadcast_id: id });
+        await call('publish_broadcast', { p_broadcast_id: id }, { bg: true });
         toast('Broadcast sent to everyone 📣');
         location.hash = '#/broadcast/' + id;
       } catch (err) {

@@ -24,6 +24,7 @@
         return JSON.parse(JSON.stringify(out === undefined ? null : out));
       } catch (err) {
         if (String(err.message) === 'SESSION_EXPIRED') throw ApiError('Your session has expired. Please sign in again.', 'session');
+        if (String(err.message) === 'PIN_CHANGE_REQUIRED') throw ApiError('Please choose your own PIN first.', 'pin');
         throw ApiError(err.message || String(err));
       }
     }
@@ -46,6 +47,7 @@
     if (!res.ok) {
       var msg = (body && (body.message || body.error_description || body.hint)) || ('Server error ' + res.status);
       if (/SESSION_EXPIRED/.test(msg)) throw ApiError('Your session has expired. Please sign in again.', 'session');
+      if (/PIN_CHANGE_REQUIRED/.test(msg)) throw ApiError('Please choose your own PIN first.', 'pin');
       if (/ADMIN_ONLY/.test(msg)) throw ApiError('Only managers can do that.');
       if (res.status === 404 && /function/i.test(msg)) msg = 'The database is not set up yet (run schema.sql in Supabase).';
       throw ApiError(msg);
