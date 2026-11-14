@@ -101,7 +101,8 @@ What you'll get:
 - **Items:** go to **More → Import items**. In Excel, select your list including the heading row, copy, paste it into the box, then press **Preview → Import**.
   Headings it understands: `Item, Category, Unit, Code, On hand, Par, Order up to, Max per take`. Only **Item** is required.
   There's a template in `items-template.csv`.
-- **Staff:** go to **More → Staff → Add person** and tap **Make one up** for a PIN. Give each person their PIN and the app link.
+- **Staff:** go to **More → Staff → Add person**, type their name and press **Save**. They start with the **default PIN** (`0000` unless you change it in **Settings → Staff sign-in**). Send them the app link. The first time they sign in, the app makes them choose their own 4-digit PIN; easy ones like `1234` and the default PIN aren't allowed.
+- **Forgotten PIN or locked out?** Go to **Staff → their name → Reset PIN**. It goes back to the default PIN, they're signed out and unlocked, and they choose a new PIN at their next sign-in.
 
 ---
 
@@ -125,6 +126,7 @@ What you'll get:
 - The public key can **only** call the app's functions. Every table is locked with Row Level Security and has no public policies.
 - Every function checks the signed-in session. Manager-only functions also check the role.
 - PINs are stored as bcrypt hashes. Five wrong PINs locks that person out for 5 minutes, and a manager can reset a PIN to unlock them.
+- Anyone signed in with a default or reset PIN can't do anything until they've chosen their own. The database enforces this, not just the screen.
 - Sessions last 120 days on that phone. Signing out, deactivating someone or resetting their PIN ends their sessions.
 - Staff never see stock quantities, and only managers can see everyone's activity.
 
