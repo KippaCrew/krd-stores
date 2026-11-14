@@ -1635,8 +1635,7 @@
     var w = sheet({
       title: isNew ? 'Add person' : 'Edit ' + p.name,
       body: '<form id="pForm" class="row g-3">' +
-        '<div class="col-7"><label class="form-label" for="pName">Name</label><input class="form-control" id="pName" required value="' + esc(p.name) + '" autocomplete="off"><div class="form-text">As shown on the sign-in screen</div></div>' +
-        '<div class="col-5"><label class="form-label" for="pSn">Service no. <span class="text-muted">(optional)</span></label><input class="form-control" id="pSn" maxlength="30" inputmode="numeric" value="' + esc(p.service_number || '') + '" autocomplete="off"><div class="form-text">Matches TRACKS uniform orders</div></div>' +
+        '<div class="col-12"><label class="form-label" for="pName">Name</label><input class="form-control" id="pName" required value="' + esc(p.name) + '" autocomplete="off"><div class="form-text">As it should appear on the sign-in screen. Use the same first and last name as in TRACKS so uniform orders match.</div></div>' +
         '<div class="col-6"><label class="form-label" for="pPos">Position</label><select class="form-select" id="pPos">' +
           [['driver', 'Driver'], ['guard', 'Guard'], ['other', 'Other']].map(function (o) { return '<option value="' + o[0] + '"' + ((p.position || (isNew ? '' : 'other')) === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
           '</select><div class="form-text">Puts them in the Drivers or Guards chat</div></div>' +
@@ -1690,7 +1689,7 @@
       if (!qs('#pForm', w).reportValidity()) return;
       var pinEl = qs('#pPin', w), pin = pinEl ? pinEl.value.trim() : '', name = qs('#pName', w).value.trim();
       try {
-        var res = await call('save_staff', { p_person: { id: isNew ? null : p.id, name: name, role: qs('#pRole', w).value, active: qs('#pActive', w).checked, can_broadcast: qs('#pBc', w).checked, position: qs('#pPos', w).value, union_affiliation: qs('#pUnion', w).value, service_number: qs('#pSn', w).value.trim(), pin: pin || null } });
+        var res = await call('save_staff', { p_person: { id: isNew ? null : p.id, name: name, role: qs('#pRole', w).value, active: qs('#pActive', w).checked, can_broadcast: qs('#pBc', w).checked, position: qs('#pPos', w).value, union_affiliation: qs('#pUnion', w).value, pin: pin || null } });
         closeSheet();
         if (isNew) {
           sheet({ title: name + ' added', body: '<p>Send <b>' + esc(name) + '</b> the app link and tell them to sign in with:</p><p class="display-5 fw-bold text-center" style="letter-spacing:.3em;color:var(--qr-dark-blue)">' + esc(res.pin || pin) + '</p>' +
@@ -1737,7 +1736,7 @@
     }
     return '<div class="card mb-2"><div class="card-body py-2">' +
       '<div class="d-flex justify-content-between align-items-start gap-2"><div><div class="fw-bold fs-6">' + esc(uniWho(t)) + '</div>' +
-        '<div class="small text-muted">Order <b style="color:var(--qr-ink)">' + esc(t.order_number) + '</b>' + uniItems(t.items) + (t.service_number ? ' · #' + esc(t.service_number) : '') + '</div></div>' + uniBadge(t.status) + '</div>' +
+        '<div class="small text-muted">Order <b style="color:var(--qr-ink)">' + esc(t.order_number) + '</b>' + uniItems(t.items) + '</div></div>' + uniBadge(t.status) + '</div>' +
       '<div class="small mt-1">' + detail + '</div>' +
       (!t.staff_id && (t.status === 'in_transit' || t.status === 'arrived')
         ? '<div class="alert alert-warning py-2 px-2 small mt-2 mb-0 d-flex align-items-center gap-2"><span class="flex-grow-1">' + (t.person_name ? '"' + esc(t.person_name) + '" isn\'t matched to anyone in Kippa Crew' : 'Not matched to anyone in Kippa Crew') + ', so no one will be notified.</span>' +
@@ -1798,15 +1797,15 @@
   async function uniPeopleOptions(selected) {
     var people = (await call('list_staff')).filter(function (p) { return p.active; });
     return '<option value="">Choose…</option>' + people.map(function (p) {
-      return '<option value="' + p.id + '"' + (p.id === selected ? ' selected' : '') + '>' + esc(p.name) + (p.service_number ? ' (#' + esc(p.service_number) + ')' : '') + '</option>';
+      return '<option value="' + p.id + '"' + (p.id === selected ? ' selected' : '') + '>' + esc(p.name) + '</option>';
     }).join('');
   }
   async function uniLinkPerson(t, done) {
     var opts = await uniPeopleOptions(t.staff_id);
     var w = sheet({ title: 'Who is order ' + t.order_number + ' for?',
-      body: (t.person_name ? '<p class="small text-muted">TRACKS says: <b>' + esc(t.person_name) + '</b>' + (t.service_number ? ', service number <b>' + esc(t.service_number) + '</b>' : '') + '</p>' : '') +
+      body: (t.person_name ? '<p class="small text-muted">TRACKS says: <b>' + esc(t.person_name) + '</b></p>' : '') +
         '<label class="form-label" for="ulP">Person</label><select class="form-select" id="ulP">' + opts + '</select>' +
-        '<div class="form-text">Tip: add their service number in <b>Staff</b> and future orders will match them automatically.</div>',
+        '<div class="form-text">Kippa Crew will remember this, so future orders under ' + (t.person_name ? '"' + esc(t.person_name) + '"' : 'this name') + ' go straight to them.</div>',
       foot: '<button class="btn btn-outline-secondary" data-close>Cancel</button><button class="btn btn-primary" id="ulSave">Save</button>' });
     qs('#ulSave', w).addEventListener('click', async function () {
       var v = qs('#ulP', w).value; if (!v) { qs('#ulP', w).focus(); return; }
@@ -1880,7 +1879,7 @@
           '<button type="button" class="btn btn-outline-secondary btn-sm" id="tlNew">Make a new key</button>' +
           '<button type="button" class="btn btn-outline-danger btn-sm" id="tlOff">Turn off</button></div>' +
           '<p class="small text-muted mb-0">Keep the link key private. If it gets out, press <b>Make a new key</b> and paste the new code into TRACKS.</p>' +
-          (t.no_service_number ? '<div class="alert alert-light border small mt-2 mb-0">' + plural(t.no_service_number, 'person has', 'people have') + ' no service number in <a href="#/staff">Staff</a>. Orders still match by name, but a service number is more reliable.</div>' : '') +
+          (t.remembered ? '<p class="small text-muted mt-2 mb-0">' + plural(t.remembered, 'TRACKS name') + ' linked to people by hand and remembered.</p>' : '') +
           (t.unmatched ? '<div class="alert alert-warning small mt-2 mb-0"><a href="#/uniforms">' + plural(t.unmatched, 'uniform order') + '</a> couldn\'t be matched to anyone.</div>' : '')) +
       '</div></div>';
     if (location.hash === '#/settings#tracks') host.scrollIntoView();

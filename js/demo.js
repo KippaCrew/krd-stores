@@ -4,7 +4,7 @@
 (function (global) {
   'use strict';
 
-  var KEY = 'krd_demo_v7';
+  var KEY = 'krd_demo_v8';
   var memory = null;
   var fileMem = {};   // demo attachments live in memory only (phone storage is too small for PDFs)
   var imgMem = {};    // demo item photos, same reason
@@ -21,7 +21,7 @@
 
   function seed() {
     var admin = { id: uid(), name: 'Manager (demo)', pin: '1234', role: 'admin', active: true, failed: 0, locked_until: null, last_login: null, can_broadcast: true, position: 'other' };
-    var sam = { id: uid(), name: 'Sam Smith', pin: '1111', role: 'staff', active: true, failed: 0, locked_until: null, last_login: null, position: 'driver', union_affiliation: 'rtbu', service_number: '123456' };
+    var sam = { id: uid(), name: 'Sam Smith', pin: '1111', role: 'staff', active: true, failed: 0, locked_until: null, last_login: null, position: 'driver', union_affiliation: 'rtbu' };
     var alex = { id: uid(), name: 'Alex Brown', pin: '2222', role: 'staff', active: true, failed: 0, locked_until: null, last_login: null, position: 'guard', union_affiliation: 'afule' };
     var pat = { id: uid(), name: 'Pat Admin (demo)', pin: '3333', role: 'administrator', active: true, failed: 0, locked_until: null, last_login: null, position: 'other' };
     var items = [
@@ -79,15 +79,15 @@
                   instant_alerts: 'true', daily_summary: 'true', app_url: '', default_pin: '0000' },
       emails: [],
       uniforms: [
-        { id: 1, order_number: 'ORD-2026-004821', person_name: 'Smith, Sam', service_number: '123456', staff_id: sam.id, items: 3, depot: 'Kippa Ring', status: 'in_transit', source: 'tracks', note: null,
+        { id: 1, order_number: 'ORD-2026-004821', person_name: 'Smith, Sam', staff_id: sam.id, items: 3, depot: 'Kippa Ring', status: 'in_transit', source: 'tracks', note: null,
           tracks_updates: 1, created_at: new Date(t0 - 26 * 3600000).toISOString(), updated_at: new Date(t0 - 26 * 3600000).toISOString(), tracks_done: false },
-        { id: 2, order_number: 'ORD-2026-004719', person_name: 'Brown, Alex', service_number: null, staff_id: alex.id, items: 1, depot: 'Kippa Ring', status: 'arrived', source: 'tracks', note: null,
+        { id: 2, order_number: 'ORD-2026-004719', person_name: 'Brown, Alex', staff_id: alex.id, items: 1, depot: 'Kippa Ring', status: 'arrived', source: 'tracks', note: null,
           tracks_updates: 1, created_at: new Date(t0 - 3 * 86400000).toISOString(), updated_at: new Date(t0 - 5 * 3600000).toISOString(),
           arrived_at: new Date(t0 - 5 * 3600000).toISOString(), arrived_by: admin.id, notified_at: new Date(t0 - 5 * 3600000).toISOString(), tracks_done: false },
-        { id: 3, order_number: 'ORD-2026-004866', person_name: 'Jordan Lee', service_number: '778899', staff_id: null, items: 2, depot: 'Kippa Ring', status: 'in_transit', source: 'tracks', note: null,
+        { id: 3, order_number: 'ORD-2026-004866', person_name: 'Jordan Lee', staff_id: null, items: 2, depot: 'Kippa Ring', status: 'in_transit', source: 'tracks', note: null,
           tracks_updates: 1, created_at: new Date(t0 - 4 * 3600000).toISOString(), updated_at: new Date(t0 - 4 * 3600000).toISOString(), tracks_done: false }
       ],
-      nextU: 4
+      nextU: 4, nameLinks: {}
     };
   }
 
@@ -205,15 +205,15 @@
     if (x.indexOf(',') >= 0) x = x.split(',')[1].trim() + ' ' + x.split(',')[0].trim();
     return x.toLowerCase().replace(/\s+/g, ' ').trim();
   }
-  function normSn(t) { var x = String(t || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase().replace(/^0+/, ''); return x || null; }
-  function matchStaff(db, sn, name) {
-    var m;
-    if (normSn(sn)) { m = db.staff.filter(function (s) { return s.active && normSn(s.service_number) === normSn(sn); }); if (m.length === 1) return m[0].id; }
-    if (normName(name)) { m = db.staff.filter(function (s) { return s.active && normName(s.name) === normName(name); }); if (m.length === 1) return m[0].id; }
-    return null;
+  function matchStaff(db, name) {
+    var k = normName(name); if (!k) return null;
+    var l = (db.nameLinks || {})[k];
+    if (l && db.staff.some(function (s) { return s.id === l && s.active; })) return l;
+    var m = db.staff.filter(function (s) { return s.active && normName(s.name) === k; });
+    return m.length === 1 ? m[0].id : null;
   }
   function uniJson(db, u) {
-    return { id: u.id, order_number: u.order_number, person_name: u.person_name, service_number: u.service_number || null, staff_id: u.staff_id || null,
+    return { id: u.id, order_number: u.order_number, person_name: u.person_name, staff_id: u.staff_id || null,
       staff_name: u.staff_id ? staffName(db, u.staff_id) : null, items: u.items == null ? null : u.items, depot: u.depot || null, status: u.status, source: u.source,
       note: u.note || null, tracks_updates: u.tracks_updates || 0, created_at: u.created_at, updated_at: u.updated_at, arrived_at: u.arrived_at || null,
       arrived_by_name: u.arrived_by ? staffName(db, u.arrived_by) : null, notified_at: u.notified_at || null, collected_at: u.collected_at || null,
@@ -222,13 +222,13 @@
   function uniRelink(db) {
     db.uniforms.forEach(function (u) {
       if (!u.staff_id && (u.status === 'in_transit' || u.status === 'arrived')) {
-        var v = matchStaff(db, u.service_number, u.person_name);
+        var v = matchStaff(db, u.person_name);
         if (v) { u.staff_id = v; u.updated_at = now(); if (u.status === 'arrived') u.notified_at = now(); }
       }
     });
   }
   function uniOpen(db) { return db.uniforms.filter(function (u) { return u.status === 'in_transit' || u.status === 'arrived'; }); }
-  function uniInbound(db, ev, order, name, sn, depot, items) {
+  function uniInbound(db, ev, order, name, depot, items) {
     order = String(order || '').trim().slice(0, 40); name = String(name || '').trim().slice(0, 120);
     if (!order) fail('Order number is required.');
     if (ev === 'cancelled') {
@@ -238,14 +238,14 @@
       return { ok: true, ticket: c.id, status: 'cancelled' };
     }
     if (ev !== 'dispatched') fail('Unknown event.');
-    var st = matchStaff(db, sn, name);
+    var st = matchStaff(db, name);
     var u = db.uniforms.filter(function (x) { return x.status === 'in_transit' && lc(x.order_number) === lc(order); }).pop();
     if (u) {
-      u.person_name = name || u.person_name; u.service_number = sn || u.service_number; u.staff_id = u.staff_id || st;
+      u.person_name = name || u.person_name; u.staff_id = u.staff_id || st;
       u.items = items != null ? items : u.items; u.depot = depot || u.depot; u.tracks_updates++; u.updated_at = now();
       return { ok: true, ticket: u.id, new: false, matched: !!u.staff_id };
     }
-    u = { id: db.nextU++, order_number: order, person_name: name, service_number: sn || null, staff_id: st, items: items == null ? null : items, depot: depot || null,
+    u = { id: db.nextU++, order_number: order, person_name: name, staff_id: st, items: items == null ? null : items, depot: depot || null,
           status: 'in_transit', source: 'tracks', tracks_updates: 1, created_at: now(), updated_at: now(), tracks_done: false };
     db.uniforms.push(u);
     return { ok: true, ticket: u.id, new: true, matched: !!st };
@@ -552,7 +552,7 @@
     },
     list_staff: function (db, a) {
       authOffice(db, a.p_token);
-      return db.staff.map(function (s) { return { id: s.id, name: s.name, role: s.role, active: s.active, last_login: s.last_login || null, can_broadcast: !!s.can_broadcast, must_change_pin: !!s.must_change_pin, position: s.position || 'other', union_affiliation: s.union_affiliation || 'none', service_number: s.service_number || null,
+      return db.staff.map(function (s) { return { id: s.id, name: s.name, role: s.role, active: s.active, last_login: s.last_login || null, can_broadcast: !!s.can_broadcast, must_change_pin: !!s.must_change_pin, position: s.position || 'other', union_affiliation: s.union_affiliation || 'none',
         locked: !!(s.locked_until && new Date(s.locked_until) > new Date()) }; })
         .sort(function (x, y) { return (y.active - x.active) || lc(x.name).localeCompare(lc(y.name)); });
     },
@@ -574,13 +574,12 @@
       if (db.staff.some(function (x) { return lc(x.name) === lc(name) && x.id !== p.id; })) fail('Someone with that name already exists.');
       if (!p.id) {
         var pin = p.pin || defaultPin(db);
-        var s = { id: uid(), name: name, pin: pin, role: role, active: active, failed: 0, locked_until: null, last_login: null, can_broadcast: !!p.can_broadcast, must_change_pin: true, position: pos, union_affiliation: uni, service_number: String(p.service_number || '').trim().slice(0, 30) || null, created_at: now() };
+        var s = { id: uid(), name: name, pin: pin, role: role, active: active, failed: 0, locked_until: null, last_login: null, can_broadcast: !!p.can_broadcast, must_change_pin: true, position: pos, union_affiliation: uni, created_at: now() };
         db.staff.push(s); uniRelink(db); return { id: s.id, pin: pin };
       }
       if (p.id === me.id && (role !== me.role || !active)) fail('You can\'t change your own access level or remove yourself.');
       var t = db.staff.find(function (x) { return x.id === p.id; });
       t.name = name; t.role = role; t.active = active; t.can_broadcast = !!p.can_broadcast; t.position = pos; t.union_affiliation = uni;
-      if ('service_number' in p) t.service_number = String(p.service_number || '').trim().slice(0, 30) || null;
       if (p.pin) { t.pin = p.pin; t.failed = 0; t.locked_until = null; if (t.id !== me.id) t.must_change_pin = true; }
       if (!active || p.pin) Object.keys(db.sessions).forEach(function (k) { if (db.sessions[k] === t.id && t.id !== me.id) delete db.sessions[k]; });
       if (!active) db.gmembers = db.gmembers.filter(function (m) { return m.staff_id !== t.id; });
@@ -801,6 +800,7 @@
       if (!u) fail('That ticket no longer exists.');
       if (a.p_staff_id && !db.staff.some(function (x) { return x.id === a.p_staff_id && x.active; })) fail('That person is not in Kippa Crew.');
       u.staff_id = a.p_staff_id || null; u.updated_at = now();
+      if (u.source === 'tracks' && normName(u.person_name)) { db.nameLinks = db.nameLinks || {}; if (u.staff_id) db.nameLinks[normName(u.person_name)] = u.staff_id; else delete db.nameLinks[normName(u.person_name)]; uniRelink(db); }
       var notified = !!(u.status === 'arrived' && u.staff_id); if (notified) u.notified_at = now();
       var r = uniJson(db, u); r.notified = notified; return r;
     },
@@ -834,7 +834,7 @@
       auth(db, a.p_token, true);
       return { key: db.settings.tracks_key || '', last_seen: db.settings.tracks_last_seen || null, last_event: db.settings.tracks_last_event || null,
                unmatched: uniOpen(db).filter(function (u) { return !u.staff_id; }).length,
-               no_service_number: db.staff.filter(function (s) { return s.active && !String(s.service_number || '').trim(); }).length };
+               remembered: Object.keys(db.nameLinks || {}).length };
     },
     tracks_link_set: function (db, a) {
       auth(db, a.p_token, true);
@@ -847,7 +847,7 @@
       if (a.p_key !== db.settings.tracks_key) fail('BAD_KEY');
       db.settings.tracks_last_seen = now(); db.settings.tracks_last_event = a.p_event + ' ' + a.p_order;
       if (a.p_event === 'ping') return { ok: true, event: 'ping' };
-      return uniInbound(db, a.p_event, a.p_order, a.p_name, a.p_service, a.p_depot, a.p_items);
+      return uniInbound(db, a.p_event, a.p_order, a.p_name, a.p_depot, a.p_items);
     },
     demo_simulate_tracks: function (db, a) {
       authOffice(db, a.p_token);
@@ -856,7 +856,7 @@
       var parts = who.name.split(' ');
       db.settings.tracks_last_seen = now(); db.settings.tracks_last_event = 'dispatched (demo)';
       return uniInbound(db, 'dispatched', 'ORD-2026-' + String(4900 + db.nextU).padStart(6, '0'), parts.length > 1 ? parts.slice(1).join(' ') + ', ' + parts[0] : who.name,
-                        who.service_number || null, 'Kippa Ring', 1 + Math.floor(Math.random() * 4));
+                        'Kippa Ring', 1 + Math.floor(Math.random() * 4));
     },
     send_message: function (db, a) {
       var s = auth(db, a.p_token), body = String(a.p_body || '').trim();

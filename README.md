@@ -7,7 +7,7 @@ A phone app for the Kippa Ring Depot crew. Use it for the store room (it replace
 - **Uniform collections:** when TRACKS dispatches a uniform order to Kippa Ring, a ticket appears here. Tick it when the parcel arrives and the person gets a "ready to collect" notification.
 - **TOI Broadcasts** send notices to everyone, with PDFs and photos attached. They can be marked urgent (a pop-up appears) and can ask for a "read & understood" acknowledgement, so you can see who has acknowledged.
 
-It's free to run: GitHub Pages hosts the app, Supabase stores the data and Resend sends the emails. It's separate from QR systems. The only connection is optional and one-way: TRACKS can **send** Kippa Crew a uniform order number and name (see section 7). Kippa Crew can't see or change anything in TRACKS.
+It's free to run: GitHub Pages hosts the app, Supabase stores the data and Resend sends the emails. It's separate from QR systems. The only connection is optional and one-way: TRACKS can **send** Kippa Crew a uniform order number and the person's name (see section 7). Kippa Crew can't see or change anything in TRACKS.
 
 ```
  Phone (staff / manager)                     Supabase (your free account, Sydney)
@@ -141,9 +141,9 @@ When the uniform store sets an order to **Dispatched to Depot** for Kippa Ring, 
 
 **d) Test it.** Dispatch a test order to Kippa Ring in TRACKS. The TRACKS message should end with "Kippa Crew has been told", and Settings should show **✅ Last heard from TRACKS**.
 
-**Matching people.** Add each person's **Service no.** under **Staff**, because that's what TRACKS sends. If there's no service number, Kippa Crew matches on the exact name (it understands "Quirk, Keith"). If neither matches, the ticket says **Choose person**. Adding the service number later links any waiting tickets automatically.
+**Matching people.** TRACKS sends names only, with no service numbers. Kippa Crew matches the name to a person in **Staff** and understands "Quirk, Keith" as well as "Keith Quirk". Using the same first and last name in both systems makes it work best. If a name doesn't match (say TRACKS has "Samuel" and Kippa Crew has "Sam"), the ticket says **Choose person**. Pick them once and Kippa Crew remembers, so that name goes straight to them from then on.
 
-**What TRACKS sends:** order number, the person's name and service number, the depot and the number of items. It sends nothing else, and only for orders going to the depots in `DEPOTS`. If an order is cancelled in TRACKS, its open ticket is closed. If Kippa Crew can't be reached, TRACKS still saves the status normally and warns that you'll need to add it by hand (**Uniform collections → + Add**).
+**What TRACKS sends:** the order number, the person's name, the depot and the number of items. It sends nothing else, and only for orders going to the depots in `DEPOTS`. If an order is cancelled in TRACKS, its open ticket is closed. If Kippa Crew can't be reached, TRACKS still saves the status normally and warns that you'll need to add the order by hand (**Uniform collections → + Add**).
 
 ---
 
