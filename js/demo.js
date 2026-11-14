@@ -1,12 +1,13 @@
-/* KRD Stores — DEMO backend.
+/* Kippa Crew — DEMO backend.
    A faithful in-browser copy of the database functions in supabase/schema.sql,
    so the app can be tried with no setup. Data is kept on this device only. */
 (function (global) {
   'use strict';
 
-  var KEY = 'krd_demo_v2';
+  var KEY = 'krd_demo_v4';
   var memory = null;
   var fileMem = {};   // demo attachments live in memory only (phone storage is too small for PDFs)
+  var imgMem = {};    // demo item photos, same reason
 
   function uid() {
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
@@ -19,9 +20,9 @@
   function int(v, d) { var n = parseInt(v, 10); return isNaN(n) ? d : n; }
 
   function seed() {
-    var admin = { id: uid(), name: 'Manager (demo)', pin: '1234', role: 'admin', active: true, failed: 0, locked_until: null, last_login: null, can_broadcast: true };
-    var sam = { id: uid(), name: 'Sam Smith', pin: '1111', role: 'staff', active: true, failed: 0, locked_until: null, last_login: null };
-    var alex = { id: uid(), name: 'Alex Brown', pin: '2222', role: 'staff', active: true, failed: 0, locked_until: null, last_login: null };
+    var admin = { id: uid(), name: 'Manager (demo)', pin: '1234', role: 'admin', active: true, failed: 0, locked_until: null, last_login: null, can_broadcast: true, position: 'other' };
+    var sam = { id: uid(), name: 'Sam Smith', pin: '1111', role: 'staff', active: true, failed: 0, locked_until: null, last_login: null, position: 'driver' };
+    var alex = { id: uid(), name: 'Alex Brown', pin: '2222', role: 'staff', active: true, failed: 0, locked_until: null, last_login: null, position: 'guard' };
     var items = [
       ['Sunscreen SPF50+ 1L pump', 'Sun & Bugs', 'bottle', 9, 4, 12],
       ['Sunscreen SPF50+ 100ml tube', 'Sun & Bugs', 'tube', 22, 10, 40],
@@ -54,17 +55,25 @@
     addTx(items[2], alex, 'take', -2, 'Track inspection', 90);
     addTx(items[5], sam, 'take', -1, null, 40);
     var msgs = [
-      { id: 1, sender_id: admin.id, recipient_id: null, body: 'Welcome to the new stores app! Log everything you take here instead of on the paper sheet. Thanks all 👍', created_at: new Date(t0 - 3 * 3600000).toISOString() },
-      { id: 2, sender_id: sam.id, recipient_id: admin.id, body: 'Insect repellent is nearly out on the shelf', created_at: new Date(t0 - 30 * 60000).toISOString() }
+      { id: 1, sender_id: admin.id, recipient_id: null, body: 'Welcome to Kippa Crew! Log everything you take from the store room here instead of on the paper sheet. Thanks all 👍', created_at: new Date(t0 - 3 * 3600000).toISOString() },
+      { id: 2, sender_id: sam.id, recipient_id: admin.id, body: 'Insect repellent is nearly out on the shelf', created_at: new Date(t0 - 30 * 60000).toISOString() },
+      { id: 3, sender_id: admin.id, recipient_id: null, group_id: 1, body: 'Drivers – new sunscreen pumps are on the top shelf.', created_at: new Date(t0 - 50 * 60000).toISOString() }
     ];
     return {
       staff: [admin, sam, alex], sessions: {}, items: items, tx: tx, nextTx: id,
-      stocktakes: [], counts: [], msgs: msgs, nextMsg: 3, reads: {},
+      stocktakes: [], counts: [], msgs: msgs, nextMsg: 4, reads: {},
+      groups: [{ id: 1, name: 'Drivers', kind: 'driver', archived: false }, { id: 2, name: 'Guards', kind: 'guard', archived: false }],
+      gmembers: [], nextG: 3, itemImg: {},
+      notes: [{ id: 1, title: 'Welcome to Kippa Crew', created_by: admin.id, published_at: now(), deleted: false,
+                points: ['Kippa Crew is the new name for the depot app, with a new logo', 'Log anything you take from the store room — no more paper sheet',
+                         'TOI Broadcasts: important notices, with PDFs and photos', 'Group chats, plus automatic Drivers and Guards chats',
+                         'Updates like this one will pop up here — tap "Got it" when you\'ve read it'] }],
+      noteAcks: [{ note_id: 1, staff_id: admin.id }], nextNote: 2,
       broadcasts: [{ id: 1, sender_id: admin.id, title: 'Welcome to TOI Broadcasts', urgent: false, require_ack: true, published: true, deleted: false,
                      body: 'Important notices from the depot will appear here.\nPlease open each one and tap "I have read and understood".',
                      created_at: new Date(t0 - 2 * 3600000).toISOString(), published_at: new Date(t0 - 2 * 3600000).toISOString() }],
       bfiles: [], breads: [{ broadcast_id: 1, staff_id: admin.id, seen_at: now(), acked_at: now() }], nextB: 2, nextF: 1,
-      settings: { alert_email: '', resend_api_key: '', email_from: 'Kippa Ring Depot Stores <onboarding@resend.dev>',
+      settings: { alert_email: '', resend_api_key: '', email_from: 'Kippa Crew <onboarding@resend.dev>',
                   instant_alerts: 'true', daily_summary: 'true', app_url: '', default_pin: '0000' },
       emails: []
     };
@@ -86,7 +95,7 @@
     if (admin && s.role !== 'admin') fail('ADMIN_ONLY');
     return s;
   }
-  function meJson(s) { return { id: s.id, name: s.name, role: s.role, can_broadcast: s.role === 'admin' || !!s.can_broadcast, must_change_pin: !!s.must_change_pin }; }
+  function meJson(s) { return { id: s.id, name: s.name, role: s.role, can_broadcast: s.role === 'admin' || !!s.can_broadcast, must_change_pin: !!s.must_change_pin, position: s.position || 'other' }; }
   function defaultPin(db) { return /^\d{4}$/.test(db.settings.default_pin || '') ? db.settings.default_pin : '0000'; }
   function canSend(s) { return s.role === 'admin' || !!s.can_broadcast; }
   function bread(db, bid, sid) { return db.breads.find(function (r) { return r.broadcast_id === bid && r.staff_id === sid; }); }
@@ -103,15 +112,28 @@
              ack_count: manage ? rs.filter(function (x) { return x.acked_at; }).length : null };
   }
   function liveB(db) { return db.broadcasts.filter(function (b) { return b.published && !b.deleted; }); }
+  function pendingNotes(db, s) {
+    return db.notes.filter(function (n) {
+      return !n.deleted && (!s.created_at || n.published_at >= s.created_at) && !db.noteAcks.some(function (x) { return x.note_id === n.id && x.staff_id === s.id; });
+    }).sort(function (x, y) { return y.published_at.localeCompare(x.published_at); }).slice(0, 5);
+  }
+  function noteJson(db, n, me) {
+    var adm = me.role === 'admin', act = db.staff.filter(function (x) { return x.active && (!x.created_at || x.created_at <= n.published_at); });
+    return { id: n.id, title: n.title, points: n.points, published_at: n.published_at, by: staffName(db, n.created_by),
+             acked: db.noteAcks.some(function (x) { return x.note_id === n.id && x.staff_id === me.id; }),
+             seen_count: adm ? db.noteAcks.filter(function (x) { return x.note_id === n.id && db.staff.some(function (st) { return st.id === x.staff_id && st.active; }); }).length : null,
+             audience: adm ? act.length : null };
+  }
   function staffName(db, id) { var s = db.staff.find(function (x) { return x.id === id; }); return s ? s.name : null; }
   function itemById(db, id) { return db.items.find(function (i) { return i.id === id; }); }
   function suggest(i) { return Math.max((i.order_up_to != null ? i.order_up_to : i.par * 2) - i.on_hand, 1); }
   function itemJson(i, admin) {
     if (admin) return { id: i.id, name: i.name, category: i.category, unit: i.unit, code: i.code, on_hand: i.on_hand, par: i.par,
                         order_up_to: i.order_up_to, max_per_take: i.max_per_take, active: i.active,
-                        low: i.par > 0 && i.on_hand <= i.par, suggest: suggest(i) };
-    return { id: i.id, name: i.name, category: i.category, unit: i.unit, max_per_take: i.max_per_take };
+                        low: i.par > 0 && i.on_hand <= i.par, suggest: suggest(i), img: imgVer(i.id) };
+    return { id: i.id, name: i.name, category: i.category, unit: i.unit, max_per_take: i.max_per_take, img: imgVer(i.id) };
   }
+  function imgVer(id) { var d = memory && memory.itemImg && memory.itemImg[id]; return d && imgMem[id] ? d.ver : null; }
   function sortItems(a, b) { return lc(a.category).localeCompare(lc(b.category)) || lc(a.name).localeCompare(lc(b.name)); }
   function addTx(db, item, staff, kind, qty, note, stId) {
     var t = { id: db.nextTx++, item_id: item.id, staff_id: staff ? staff.id : null, kind: kind, qty: qty, note: note || null,
@@ -134,10 +156,24 @@
     var o = db.staff.find(function (x) { return x.id === otherId && x.active; });
     return !!o && o.id !== me.id && (me.role === 'admin' || o.role === 'admin');
   }
+  function inGroup(db, st, gid) {
+    var g = db.groups.find(function (x) { return x.id === gid && !x.archived; }); if (!g) return false;
+    if (g.kind === 'custom') return db.gmembers.some(function (m) { return m.group_id === gid && m.staff_id === st.id; });
+    return (st.position || 'other') === g.kind;
+  }
+  function groupMembers(db, gid) { return db.staff.filter(function (st) { return st.active && inGroup(db, st, gid); }); }
+  function isTeam(m) { return m.recipient_id == null && m.group_id == null; }
+  function checkConvo(db, me, key) {
+    if (key === 'team') return null;
+    if (/^g\d+$/.test(key)) { var gid = +key.slice(1); if (!inGroup(db, me, gid)) fail('You are not in this group.'); return gid; }
+    if (!canChat(db, me, key)) fail('You cannot message this person.');
+    return null;
+  }
   function lastRead(db, sid, convo) { return (db.reads[sid] && db.reads[sid][convo]) || 0; }
   function unreadTotal(db, s) {
     return db.msgs.filter(function (m) {
-      if (m.recipient_id === null) return m.sender_id !== s.id && m.id > lastRead(db, s.id, 'team');
+      if (m.group_id != null) return m.sender_id !== s.id && inGroup(db, s, m.group_id) && m.id > lastRead(db, s.id, 'g' + m.group_id);
+      if (m.recipient_id == null) return m.sender_id !== s.id && m.id > lastRead(db, s.id, 'team');
       return m.recipient_id === s.id && m.id > lastRead(db, s.id, m.sender_id);
     }).length;
   }
@@ -182,6 +218,29 @@
       return { token: t, me: meJson(s) };
     },
     logout: function (db, a) { delete db.sessions[a.p_token]; },
+    whats_new_pending: function (db, a) {
+      var s = auth(db, a.p_token);
+      return pendingNotes(db, s).map(function (n) { return noteJson(db, n, s); });
+    },
+    ack_whats_new: function (db, a) {
+      var s = auth(db, a.p_token);
+      (a.p_ids || []).forEach(function (id) { if (!db.noteAcks.some(function (x) { return x.note_id === id && x.staff_id === s.id; })) db.noteAcks.push({ note_id: id, staff_id: s.id }); });
+    },
+    list_whats_new: function (db, a) {
+      var s = auth(db, a.p_token);
+      return db.notes.filter(function (n) { return !n.deleted; }).sort(function (x, y) { return y.published_at.localeCompare(x.published_at); }).slice(0, 50)
+        .map(function (n) { return noteJson(db, n, s); });
+    },
+    publish_whats_new: function (db, a) {
+      var s = auth(db, a.p_token, true);
+      if (!String(a.p_title || '').trim()) fail('Give the update a title.');
+      var pts = (a.p_points || []).map(function (x) { return String(x).trim().slice(0, 300); }).filter(Boolean);
+      if (!pts.length) fail('Add at least one point.');
+      if (pts.length > 25) fail('Keep it to 25 points or fewer.');
+      var n = { id: db.nextNote++, title: String(a.p_title).trim().slice(0, 120), points: pts, created_by: s.id, published_at: now(), deleted: false };
+      db.notes.push(n); db.noteAcks.push({ note_id: n.id, staff_id: s.id }); return n.id;
+    },
+    delete_whats_new: function (db, a) { auth(db, a.p_token, true); var n = db.notes.find(function (x) { return x.id === a.p_id; }); if (n) n.deleted = true; },
     me: function (db, a) {
       var sid = db.sessions[a.p_token], s = sid && db.staff.find(function (x) { return x.id === sid && x.active; });
       if (!s) fail('SESSION_EXPIRED'); return meJson(s);
@@ -212,7 +271,8 @@
           var r = bread(db, b.id, s.id);
           return b.urgent && b.sender_id !== s.id && new Date(b.published_at).getTime() > fortnight && (b.require_ack ? !(r && r.acked_at) : !(r && r.seen_at));
         }).sort(function (x, y) { return y.published_at.localeCompare(x.published_at); })
-          .map(function (b) { return { id: b.id, title: b.title, at: b.published_at, who: staffName(db, b.sender_id) }; }) };
+          .map(function (b) { return { id: b.id, title: b.title, at: b.published_at, who: staffName(db, b.sender_id) }; }),
+        whats_new: pendingNotes(db, s).length };
     },
     change_my_pin: function (db, a) {
       var s = auth(db, a.p_token);
@@ -369,7 +429,7 @@
       return { id: st.id, note: st.note, started_at: st.started_at, started_by: staffName(db, st.started_by),
                items: db.items.filter(function (i) { return i.active; }).sort(sortItems).map(function (i) {
                  var c = db.counts.find(function (c) { return c.stocktake_id === st.id && c.item_id === i.id; });
-                 return { id: i.id, name: i.name, category: i.category, unit: i.unit, counted: c ? c.counted : null }; }) };
+                 return { id: i.id, name: i.name, category: i.category, unit: i.unit, counted: c ? c.counted : null, img: imgVer(i.id) }; }) };
     },
     save_count: function (db, a) {
       var s = auth(db, a.p_token, true);
@@ -414,7 +474,7 @@
     },
     list_staff: function (db, a) {
       auth(db, a.p_token, true);
-      return db.staff.map(function (s) { return { id: s.id, name: s.name, role: s.role, active: s.active, last_login: s.last_login || null, can_broadcast: !!s.can_broadcast, must_change_pin: !!s.must_change_pin,
+      return db.staff.map(function (s) { return { id: s.id, name: s.name, role: s.role, active: s.active, last_login: s.last_login || null, can_broadcast: !!s.can_broadcast, must_change_pin: !!s.must_change_pin, position: s.position || 'other',
         locked: !!(s.locked_until && new Date(s.locked_until) > new Date()) }; })
         .sort(function (x, y) { return (y.active - x.active) || lc(x.name).localeCompare(lc(y.name)); });
     },
@@ -422,18 +482,20 @@
       var me = auth(db, a.p_token, true), p = a.p_person || {}, name = String(p.name || '').trim();
       if (!name) fail('Name is required.');
       if (p.pin && !/^[0-9]{4,8}$/.test(p.pin)) fail('PIN must be 4 to 8 digits.');
-      var role = p.role || 'staff', active = p.active !== false;
+      var role = p.role || 'staff', active = p.active !== false, pos = p.position || 'other';
+      if (['driver', 'guard', 'other'].indexOf(pos) < 0) fail('Position must be Driver, Guard or Other.');
       if (db.staff.some(function (x) { return lc(x.name) === lc(name) && x.id !== p.id; })) fail('Someone with that name already exists.');
       if (!p.id) {
         var pin = p.pin || defaultPin(db);
-        var s = { id: uid(), name: name, pin: pin, role: role, active: active, failed: 0, locked_until: null, last_login: null, can_broadcast: !!p.can_broadcast, must_change_pin: true };
+        var s = { id: uid(), name: name, pin: pin, role: role, active: active, failed: 0, locked_until: null, last_login: null, can_broadcast: !!p.can_broadcast, must_change_pin: true, position: pos, created_at: now() };
         db.staff.push(s); return { id: s.id, pin: pin };
       }
       if (p.id === me.id && (role !== 'admin' || !active)) fail('You cannot remove your own admin access.');
       var t = db.staff.find(function (x) { return x.id === p.id; });
-      t.name = name; t.role = role; t.active = active; t.can_broadcast = !!p.can_broadcast;
+      t.name = name; t.role = role; t.active = active; t.can_broadcast = !!p.can_broadcast; t.position = pos;
       if (p.pin) { t.pin = p.pin; t.failed = 0; t.locked_until = null; if (t.id !== me.id) t.must_change_pin = true; }
       if (!active || p.pin) Object.keys(db.sessions).forEach(function (k) { if (db.sessions[k] === t.id && t.id !== me.id) delete db.sessions[k]; });
+      if (!active) db.gmembers = db.gmembers.filter(function (m) { return m.staff_id !== t.id; });
       return { id: t.id };
     },
     get_settings: function (db, a) {
@@ -452,19 +514,25 @@
     send_test_email: function (db, a) {
       auth(db, a.p_token, true);
       if (!db.settings.resend_api_key || !db.settings.alert_email) fail('Add your alert email and Resend API key first.');
-      db.emails.unshift({ id: db.emails.length + 1, subject: 'Test email from Kippa Ring Depot Stores', created_at: now(), status_code: null, detail: 'Demo mode — no email actually sent' });
+      db.emails.unshift({ id: db.emails.length + 1, subject: 'Test email from Kippa Crew', created_at: now(), status_code: null, detail: 'Demo mode — no email actually sent' });
       return { request_id: null };
     },
     email_status: function (db, a) { auth(db, a.p_token, true); return db.emails.slice(0, 10); },
     list_conversations: function (db, a) {
       var s = auth(db, a.p_token);
-      var team = db.msgs.filter(function (m) { return m.recipient_id === null; });
+      var team = db.msgs.filter(isTeam);
       var tl = team[team.length - 1];
       return {
         team: { key: 'team', name: 'Team (everyone)', last: tl ? { body: tl.body, at: tl.created_at, who: staffName(db, tl.sender_id) } : null,
                 unread: team.filter(function (m) { return m.sender_id !== s.id && m.id > lastRead(db, s.id, 'team'); }).length },
+        groups: db.groups.filter(function (g) { return !g.archived && inGroup(db, s, g.id); }).map(function (g) {
+          var th = db.msgs.filter(function (m) { return m.group_id === g.id; }), l = th[th.length - 1];
+          return { key: 'g' + g.id, name: g.name, kind: g.kind, sys: g.kind !== 'custom', members: groupMembers(db, g.id).length,
+                   last: l ? { body: l.body, at: l.created_at, who: staffName(db, l.sender_id), mine: l.sender_id === s.id } : null,
+                   unread: th.filter(function (m) { return m.sender_id !== s.id && m.id > lastRead(db, s.id, 'g' + g.id); }).length };
+        }).sort(function (x, y) { return (y.sys - x.sys) || ((y.last && y.last.at) || '').localeCompare((x.last && x.last.at) || '') || lc(x.name).localeCompare(lc(y.name)); }),
         people: db.staff.filter(function (o) { return canChat(db, s, o.id); }).map(function (o) {
-          var th = db.msgs.filter(function (m) { return (m.sender_id === s.id && m.recipient_id === o.id) || (m.sender_id === o.id && m.recipient_id === s.id); });
+          var th = db.msgs.filter(function (m) { return m.group_id == null && ((m.sender_id === s.id && m.recipient_id === o.id) || (m.sender_id === o.id && m.recipient_id === s.id)); });
           var l = th[th.length - 1];
           return { key: o.id, name: o.name, role: o.role, last: l ? { body: l.body, at: l.created_at, mine: l.sender_id === s.id } : null,
                    unread: th.filter(function (m) { return m.sender_id === o.id && m.id > lastRead(db, s.id, o.id); }).length };
@@ -472,11 +540,12 @@
       };
     },
     get_messages: function (db, a) {
-      var s = auth(db, a.p_token), w = a.p_with;
-      if (w !== 'team' && !canChat(db, s, w)) fail('You cannot message this person.');
+      var s = auth(db, a.p_token), w = a.p_with, gid = checkConvo(db, s, w);
       var list = db.msgs.filter(function (m) {
         if (m.id <= (a.p_after || 0)) return false;
-        return w === 'team' ? m.recipient_id === null : ((m.sender_id === s.id && m.recipient_id === w) || (m.sender_id === w && m.recipient_id === s.id));
+        if (w === 'team') return isTeam(m);
+        if (gid != null) return m.group_id === gid;
+        return m.group_id == null && ((m.sender_id === s.id && m.recipient_id === w) || (m.sender_id === w && m.recipient_id === s.id));
       }).slice(-200).map(function (m) { return { id: m.id, body: m.body, created_at: m.created_at, mine: m.sender_id === s.id, who: staffName(db, m.sender_id) }; });
       if (list.length) { db.reads[s.id] = db.reads[s.id] || {}; db.reads[s.id][w] = Math.max(lastRead(db, s.id, w), list[list.length - 1].id); }
       return list;
@@ -548,11 +617,72 @@
       db.bfiles.filter(function (f) { return f.broadcast_id === b.id; }).forEach(function (f) { delete fileMem[f.id]; });
       db.bfiles = db.bfiles.filter(function (f) { return f.broadcast_id !== b.id; });
     },
+    chat_people: function (db, a) {
+      var s = auth(db, a.p_token);
+      return db.staff.filter(function (x) { return x.active && x.id !== s.id; }).map(function (x) { return { id: x.id, name: x.name, position: x.position || 'other', role: x.role }; })
+        .sort(function (x, y) { return lc(x.name).localeCompare(lc(y.name)); });
+    },
+    create_group: function (db, a) {
+      var s = auth(db, a.p_token), name = String(a.p_name || '').trim();
+      if (!name) fail('Give the group a name.');
+      if (!(a.p_members || []).length) fail('Add at least one other person.');
+      var g = { id: db.nextG++, name: name.slice(0, 60), kind: 'custom', created_by: s.id, archived: false };
+      db.groups.push(g);
+      [s.id].concat(a.p_members).forEach(function (id) {
+        if (db.staff.some(function (x) { return x.id === id && x.active; }) && !db.gmembers.some(function (m) { return m.group_id === g.id && m.staff_id === id; }))
+          db.gmembers.push({ group_id: g.id, staff_id: id });
+      });
+      return 'g' + g.id;
+    },
+    group_info: function (db, a) {
+      var s = auth(db, a.p_token), gid = checkConvo(db, s, a.p_key);
+      if (gid == null) fail('Not a group.');
+      var g = db.groups.find(function (x) { return x.id === gid; });
+      return { key: a.p_key, name: g.name, kind: g.kind, sys: g.kind !== 'custom', created_by: staffName(db, g.created_by),
+               can_manage: g.kind === 'custom' && (g.created_by === s.id || s.role === 'admin'),
+               members: groupMembers(db, gid).map(function (m) { return { id: m.id, name: m.name, position: m.position || 'other', role: m.role, me: m.id === s.id }; })
+                 .sort(function (x, y) { return lc(x.name).localeCompare(lc(y.name)); }) };
+    },
+    update_group: function (db, a) {
+      var s = auth(db, a.p_token), gid = checkConvo(db, s, a.p_key), g = db.groups.find(function (x) { return x.id === gid; });
+      if (gid == null || g.kind !== 'custom') fail('This group is managed automatically.');
+      if (g.created_by !== s.id && s.role !== 'admin') fail('Only the person who made the group or a manager can change it.');
+      if (!String(a.p_name || '').trim()) fail('Give the group a name.');
+      g.name = String(a.p_name).trim().slice(0, 60);
+      var keep = (a.p_members || []).concat([s.id]);
+      db.gmembers = db.gmembers.filter(function (m) { return m.group_id !== gid || keep.indexOf(m.staff_id) >= 0; });
+      keep.forEach(function (id) { if (!db.gmembers.some(function (m) { return m.group_id === gid && m.staff_id === id; })) db.gmembers.push({ group_id: gid, staff_id: id }); });
+    },
+    leave_group: function (db, a) {
+      var s = auth(db, a.p_token), gid = checkConvo(db, s, a.p_key), g = db.groups.find(function (x) { return x.id === gid; });
+      if (gid == null || g.kind !== 'custom') fail('You are in this group because of your position, so you can\'t leave it.');
+      db.gmembers = db.gmembers.filter(function (m) { return !(m.group_id === gid && m.staff_id === s.id); });
+      if (!groupMembers(db, gid).length) g.archived = true;
+    },
+    delete_group: function (db, a) {
+      var s = auth(db, a.p_token), gid = checkConvo(db, s, a.p_key), g = db.groups.find(function (x) { return x.id === gid; });
+      if (gid == null || g.kind !== 'custom') fail('This group can\'t be deleted.');
+      if (g.created_by !== s.id && s.role !== 'admin') fail('Only the person who made the group or a manager can delete it.');
+      g.archived = true;
+    },
+    set_item_image: function (db, a) {
+      auth(db, a.p_token, true);
+      if (!itemById(db, a.p_item_id)) fail('Item not found.');
+      if (['image/jpeg', 'image/png', 'image/webp'].indexOf(a.p_mime) < 0) fail('Photos must be JPG, PNG or WebP.');
+      if (String(a.p_data || '').length * 3 / 4 > 1536 * 1024) fail('That photo is too large (max 1.5 MB).');
+      var ver = Date.now(); db.itemImg[a.p_item_id] = { ver: ver, mime: a.p_mime }; imgMem[a.p_item_id] = a.p_data; return ver;
+    },
+    remove_item_image: function (db, a) { auth(db, a.p_token, true); delete db.itemImg[a.p_item_id]; delete imgMem[a.p_item_id]; },
+    item_images: function (db, a) {
+      auth(db, a.p_token);
+      return (a.p_ids || []).slice(0, 40).filter(function (id) { return db.itemImg[id] && imgMem[id]; })
+        .map(function (id) { return { id: id, ver: db.itemImg[id].ver, mime: db.itemImg[id].mime, data: imgMem[id] }; });
+    },
     send_message: function (db, a) {
       var s = auth(db, a.p_token), body = String(a.p_body || '').trim();
       if (!body) fail('Message is empty.');
-      if (a.p_to !== 'team' && !canChat(db, s, a.p_to)) fail('You cannot message this person.');
-      var m = { id: db.nextMsg++, sender_id: s.id, recipient_id: a.p_to === 'team' ? null : a.p_to, body: body.slice(0, 2000), created_at: now() };
+      var gid = checkConvo(db, s, a.p_to);
+      var m = { id: db.nextMsg++, sender_id: s.id, recipient_id: (a.p_to === 'team' || gid != null) ? null : a.p_to, group_id: gid, body: body.slice(0, 2000), created_at: now() };
       db.msgs.push(m); return { id: m.id };
     }
   };

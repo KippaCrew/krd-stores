@@ -1,4 +1,4 @@
-/* KRD Stores — API layer.
+/* Kippa Crew — API layer.
    Calls the Supabase database functions (RPC). If no Supabase details are
    configured, calls go to the in-browser demo backend instead. */
 (function (global) {

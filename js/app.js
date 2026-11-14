@@ -1,11 +1,20 @@
 /* =====================================================================
-   KRD Stores — Kippa Ring Depot Stores app
+   Kippa Crew — Kippa Ring Depot crew app
    Single-page app, no build step. Hash routes, TRACKS styling.
    ===================================================================== */
 (function () {
   'use strict';
 
   var api = window.KRDApi;
+  var APP_VERSION = '1.1';
+  // Changes in this version of the app, offered when writing a "What's New" update.
+  var APP_CHANGES = [
+    'Kippa Crew: the depot app has a new name and logo',
+    'Item photos: tap a photo on the Take screen to see it bigger',
+    'Group chats: Messages → Chat → New group to make your own',
+    'Drivers & Guards chats: you\'re added automatically based on your position',
+    'What\'s New: updates like this one will pop up here — tap "Got it" once you\'ve read it'
+  ];
   var $app = document.getElementById('app');
   var $nav = document.getElementById('bottomNav');
   var $topRight = document.getElementById('topRight');
@@ -153,10 +162,10 @@
     closeSheet();
     var wrap = document.createElement('div');
     wrap.innerHTML =
-      '<div class="sheet-backdrop" data-close></div>' +
-      '<div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">' +
+      '<div class="sheet-backdrop"' + (opts.locked ? '' : ' data-close') + '></div>' +
+      '<div class="sheet' + (opts.locked ? ' is-locked' : '') + '" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">' +
         '<div class="sheet-head"><h5 id="sheetTitle">' + esc(opts.title) + '</h5>' +
-          '<button type="button" class="btn-close" data-close aria-label="Close"></button></div>' +
+          (opts.locked ? '' : '<button type="button" class="btn-close" data-close aria-label="Close"></button>') + '</div>' +
         '<div class="sheet-body">' + (opts.body || '') + '</div>' +
         (opts.foot ? '<div class="sheet-foot">' + opts.foot + '</div>' : '') +
       '</div>';
@@ -177,7 +186,7 @@
       qs('#cfOk', w).addEventListener('click', function () { closeSheet(); resolve(true); });
     });
   }
-  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && $sheetHost.innerHTML) closeSheet(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && $sheetHost.innerHTML && !qs('.sheet.is-locked')) closeSheet(); });
 
   // ------------------------------------------------------------------
   //  Offline outbox for takes (so no-signal never means no record)
@@ -217,7 +226,7 @@
   // ------------------------------------------------------------------
   async function pulse() {
     if (!S.token || document.hidden) return;
-    try { S.pulse = await call('heartbeat', null, { bg: true }); renderNav(); flushOutbox(); maybeUrgentPopup(); paintBroadcastBanner(); } catch (_) {}
+    try { S.pulse = await call('heartbeat', null, { bg: true }); renderNav(); flushOutbox(); maybeUrgentPopup(); maybeWhatsNew(); paintBroadcastBanner(); } catch (_) {}
   }
   setInterval(pulse, 25000);
   document.addEventListener('visibilitychange', function () { if (!document.hidden) pulse(); });
@@ -233,13 +242,13 @@
       { href: '#/stock', label: 'Stock', icon: I.stock, match: /^#\/(stock|import)/, dot: S.pulse.low },
       { href: '#/count', label: 'Count', icon: I.count, match: /^#\/count/ },
       { href: '#/messages', label: 'Messages', icon: I.chat, match: /^#\/(chat|messages|broadcast)/, dot: (S.pulse.unread || 0) + (S.pulse.broadcasts || 0) },
-      { href: '#/more', label: 'More', icon: I.more, match: /^#\/(more|receive|reports|tracks|staff|settings|me|history)/ }
+      { href: '#/more', label: 'More', icon: I.more, match: /^#\/(more|receive|reports|tracks|staff|settings|me|history|whatsnew)/ }
     ];
     return [
       { href: '#/take', label: 'Take', icon: I.take, match: /^#\/(take)?\/?$/ },
       { href: '#/history', label: 'My history', icon: I.history, match: /^#\/history/ },
       { href: '#/messages', label: 'Messages', icon: I.chat, match: /^#\/(chat|messages|broadcast)/, dot: (S.pulse.unread || 0) + (S.pulse.broadcasts || 0) },
-      { href: '#/me', label: 'Me', icon: I.me, match: /^#\/me/ }
+      { href: '#/me', label: 'Me', icon: I.me, match: /^#\/(me|whatsnew)/ }
     ];
   }
   function renderNav() {
@@ -270,6 +279,7 @@
     [/^#\/chat$/, function () { return viewChatList(); }],
     [/^#\/chat\/(.+)$/, function (m) { return viewChat(decodeURIComponent(m[1])); }],
     [/^#\/me$/, function () { return viewMe(); }],
+    [/^#\/whatsnew$/, function () { return viewWhatsNew(); }],
     [/^#\/more$/, function () { return adminOnly(viewMore); }],
     [/^#\/stock(?:\?(low))?$/, function (m) { return adminOnly(function () { return viewStock(m[1]); }); }],
     [/^#\/import$/, function () { return adminOnly(viewImport); }],
@@ -287,10 +297,11 @@
   async function route() {
     var seq = ++routeSeq;
     if (S.viewCleanup) { try { S.viewCleanup(); } catch (_) {} S.viewCleanup = null; }
-    closeSheet();
+    if (!qs('.sheet.is-locked')) closeSheet();
     renderNav();
     if (!S.token || !S.me) { try { await viewSignIn(); } catch (e) { if (e.kind !== 'stale') errToast(e); } return; }
     if (S.me.must_change_pin) { $nav.classList.add('d-none'); viewSetOwnPin(); return; }
+    setTimeout(maybeWhatsNew, 600);
     var h = location.hash || '#/';
     for (var i = 0; i < ROUTES.length; i++) {
       var m = h.match(ROUTES[i][0]);
@@ -392,7 +403,7 @@
         if (r && r.error) throw new Error(r.error);
         setSession(r); toast('Signed in as ' + r.me.name);
         location.hash = isAdmin() ? '#/' : '#/take';
-        route(); flushOutbox(); pulse();
+        route(); flushOutbox(); pulse(); syncPush();
       } catch (e) {
         qs('#pinErr').textContent = e.message;
         var d = qs('#dots'); d.classList.remove('shake'); void d.offsetWidth; d.classList.add('shake');
@@ -470,7 +481,7 @@
 
   function viewSetup() {
     render('<div class="signin-wrap">' +
-      '<h4>Welcome to KRD Stores</h4>' +
+      '<h4>Welcome to Kippa Crew</h4>' +
       '<p>Let\'s set up the first manager account. This is a one-time step.</p>' +
       '<form id="setupForm" class="card"><div class="card-body">' +
         '<div class="mb-3"><label class="form-label" for="suName">Your name</label><input class="form-control" id="suName" required autocomplete="name"></div>' +
@@ -491,19 +502,101 @@
   }
 
   // ------------------------------------------------------------------
+  //  ITEM PHOTOS — cached on the phone (Cache Storage) after first load
+  // ------------------------------------------------------------------
+  var IMG = {};   // itemId -> { ver, url }
+  var IMG_CACHE = 'krd-item-photos-v1';
+  function imgKey(id, ver) { return location.origin + '/__krd_img/' + id + '/' + ver; }
+  function b64ToBlob(b64, mime) {
+    var bin = atob(b64), bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new Blob([bytes], { type: mime });
+  }
+  function setImg(id, ver, blob) {
+    if (IMG[id] && IMG[id].url) URL.revokeObjectURL(IMG[id].url);
+    IMG[id] = { ver: ver, url: URL.createObjectURL(blob) };
+  }
+  function thumbHtml(i, anyImg) {
+    if (!i.img) return anyImg ? '<span class="thumb thumb-empty" aria-hidden="true">' + I.stock + '</span>' : '';
+    var have = IMG[i.id] && IMG[i.id].ver === i.img;
+    return '<button type="button" class="thumb" data-zoom="' + i.id + '" data-img="' + i.id + '" aria-label="Photo of ' + esc(i.name) + '">' +
+      (have ? '<img src="' + IMG[i.id].url + '" alt="">' : '') + '</button>';
+  }
+  function paintThumbs() {
+    qsa('[data-img]').forEach(function (el) {
+      var id = el.getAttribute('data-img');
+      if (IMG[id] && !el.querySelector('img')) el.innerHTML = '<img src="' + IMG[id].url + '" alt="">';
+    });
+  }
+  async function loadThumbs(items) {
+    var need = items.filter(function (i) { return i.img && !(IMG[i.id] && IMG[i.id].ver === i.img); });
+    if (!need.length) return;
+    var cache = null;
+    try { cache = await caches.open(IMG_CACHE); } catch (_) { cache = null; }
+    var missing = [];
+    for (var k = 0; k < need.length; k++) {
+      var it = need[k], hit = null;
+      try { hit = cache && await cache.match(imgKey(it.id, it.img)); } catch (_) {}
+      if (hit) setImg(it.id, it.img, await hit.blob()); else missing.push(it);
+    }
+    paintThumbs();
+    for (var c = 0; c < missing.length; c += 30) {
+      var chunk = missing.slice(c, c + 30);
+      try {
+        var rows = await call('item_images', { p_ids: chunk.map(function (i) { return i.id; }) }, { bg: true });
+        rows.forEach(function (r) {
+          var blob = b64ToBlob(r.data, r.mime);
+          setImg(r.id, r.ver, blob);
+          if (cache) { try { cache.put(imgKey(r.id, r.ver), new Response(blob, { headers: { 'Content-Type': r.mime } })); } catch (_) {} }
+        });
+        paintThumbs();
+      } catch (_) { break; }
+    }
+  }
+  function zoomPhoto(item) {
+    if (!item || !IMG[item.id]) return;
+    sheet({ title: item.name, body: '<img src="' + IMG[item.id].url + '" alt="' + esc(item.name) + '" style="width:100%;height:auto;border-radius:.5rem">' +
+      '<p class="text-muted mt-2 mb-0">' + esc(item.unit) + (item.category ? ' · ' + esc(item.category) : '') + '</p>',
+      foot: '<button class="btn btn-primary" data-close>Close</button>' });
+  }
+  // Resize a phone photo to a small, sharp JPEG for an item
+  function itemPhotoBlob(file) {
+    return new Promise(function (resolve, reject) {
+      var url = URL.createObjectURL(file), img = new Image();
+      img.onload = function () {
+        var max = 800, w = img.naturalWidth, h = img.naturalHeight, k = Math.min(1, max / Math.max(w, h));
+        var cv = document.createElement('canvas'); cv.width = Math.round(w * k); cv.height = Math.round(h * k);
+        var ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); ctx.drawImage(img, 0, 0, cv.width, cv.height);
+        URL.revokeObjectURL(url);
+        cv.toBlob(function (b) { b ? resolve(b) : reject(new Error('Could not read that photo')); }, 'image/jpeg', 0.8);
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('That file is not a photo this phone can read.')); };
+      img.src = url;
+    });
+  }
+  async function uploadItemPhoto(itemId, file) {
+    var blob = await itemPhotoBlob(file);
+    var ver = await call('set_item_image', { p_item_id: itemId, p_mime: 'image/jpeg', p_data: await toBase64(blob) }, { bg: true });
+    setImg(itemId, ver, blob);
+    try { var cache = await caches.open(IMG_CACHE); cache.put(imgKey(itemId, ver), new Response(blob, { headers: { 'Content-Type': 'image/jpeg' } })); } catch (_) {}
+    return ver;
+  }
+
+  // ------------------------------------------------------------------
   //  TAKE ITEMS
   // ------------------------------------------------------------------
   var takeFilter = { q: '', cat: '' };
   async function viewTake() {
     loading();
     S.items = await call('list_items');
+    S.anyImg = S.items.some(function (i) { return i.img; });
     var cats = Array.from(new Set(S.items.map(function (i) { return i.category; })));
     if (takeFilter.cat && cats.indexOf(takeFilter.cat) < 0) takeFilter.cat = '';
     // drop cart lines for items that no longer exist
     Object.keys(S.cart).forEach(function (id) { if (!S.items.some(function (i) { return i.id === id; })) delete S.cart[id]; });
 
     render(
-      '<div id="bcBanner"></div>' +
+      '<div id="bcBanner"></div><div id="pushPrompt"></div>' +
       '<div class="page-title"><h4>Take items</h4>' + (isAdmin() ? '' : '<a href="#/history" class="small">My history</a>') + '</div>' +
       '<p class="text-muted mb-1" style="margin-top:-.5rem">Tap <b>+</b> for each thing you take, then press <b>Review</b>.</p>' +
       '<div class="search-bar">' +
@@ -513,7 +606,8 @@
       '</div>' +
       '<div id="itemList" class="item-list"></div>' +
       '<div class="cart-bar" id="cartBar"></div>');
-    paintItems(); paintCart(); paintBroadcastBanner();
+    paintItems(); paintCart(); paintBroadcastBanner(); loadThumbs(S.items); paintPushPrompt();
+    on($app, 'click', '[data-zoom]', function (e, b) { zoomPhoto(S.items.find(function (i) { return i.id === b.getAttribute('data-zoom'); })); });
 
     qs('#tSearch').addEventListener('input', debounce(function (e) { takeFilter.q = e.target.value; paintItems(); }, 120));
     on($app, 'click', '[data-cat]', function (e, b) {
@@ -533,7 +627,7 @@
   }
   function itemRowHtml(i) {
     var q = S.cart[i.id] || 0;
-    return '<div class="item-row' + (q ? ' has-qty' : '') + '" id="row-' + i.id + '">' +
+    return '<div class="item-row' + (q ? ' has-qty' : '') + '" id="row-' + i.id + '">' + thumbHtml(i, S.anyImg) +
       '<div class="grow"><div class="item-name">' + esc(i.name) + '</div><div class="item-meta">' + esc(i.unit) +
       (i.max_per_take != null ? ' · max ' + i.max_per_take : '') + (isAdmin() && i.low ? ' · <span class="text-danger fw-bold">low</span>' : '') + '</div></div>' +
       '<div class="stepper">' +
@@ -558,6 +652,7 @@
     if (!S.items.length) html = '<div class="empty">No items have been set up yet.' + (isAdmin() ? ' <a href="#/stock">Add items</a> or <a href="#/import">import a list</a>.' : '') + '</div>';
     else if (!list.length) html = '<div class="empty">Nothing matches “' + esc(takeFilter.q) + '”.<br>Can\'t find it? Use <a href="#/chat">Chat</a> to tell the manager.</div>';
     qs('#itemList').innerHTML = html;
+    paintThumbs();
   }
   function cartLines() {
     return Object.keys(S.cart).map(function (id) { return { item: S.items.find(function (i) { return i.id === id; }), qty: S.cart[id] }; })
@@ -644,8 +739,17 @@
   async function viewChatList() {
     loading();
     var c = await call('list_conversations');
-    function row(cv, team) {
-      var last = cv.last ? (team && cv.last.who ? cv.last.who.split(' ')[0] + ': ' : (cv.last.mine ? 'You: ' : '')) + cv.last.body : (team ? 'Messages to everyone' : 'No messages yet');
+    function row(cv, team, group) {
+      var last = cv.last ? ((team || group) && cv.last.who && !cv.last.mine ? cv.last.who.split(' ')[0] + ': ' : (cv.last.mine ? 'You: ' : '')) + cv.last.body
+               : (team ? 'Messages to everyone' : group ? plural(cv.members, 'member') : 'No messages yet');
+      if (group) {
+        return '<a class="list-row" href="#/chat/' + encodeURIComponent(cv.key) + '">' +
+          '<span class="avatar group' + (cv.sys ? ' sys' : '') + '">' + esc(cv.sys ? (cv.kind === 'driver' ? 'DRV' : 'GRD') : initials(cv.name)) + '</span>' +
+          '<div class="grow"><div class="ttl">' + esc(cv.name) + (cv.sys ? ' <span class="badge bg-info">Auto</span>' : '') + '</div>' +
+          '<div class="sub">' + esc(last) + '</div></div>' +
+          '<div class="text-end">' + (cv.last ? '<div class="small text-muted">' + esc(ago(cv.last.at)) + '</div>' : '') +
+          (cv.unread ? '<span class="badge bg-danger">' + cv.unread + '</span>' : '') + '</div></a>';
+      }
       return '<a class="list-row" href="#/chat/' + encodeURIComponent(cv.key) + '">' +
         '<span class="avatar' + (team ? ' admin' : (cv.role === 'admin' ? ' admin' : '')) + '">' + (team ? '👥' : esc(initials(cv.name))) + '</span>' +
         '<div class="grow"><div class="ttl">' + esc(cv.name) + (cv.role === 'admin' ? ' <span class="badge bg-navy">Manager</span>' : '') + '</div>' +
@@ -655,9 +759,15 @@
     }
     render(msgTabs('chat') +
       '<div class="list mb-3">' + row(c.team, true) + '</div>' +
+      '<div class="d-flex justify-content-between align-items-center"><div class="section-title">Groups</div>' +
+        '<button class="btn btn-sm btn-outline-primary" id="newGroup">+ New group</button></div>' +
+      (c.groups.length ? '<div class="list mb-3">' + c.groups.map(function (g) { return row(g, false, true); }).join('') + '</div>'
+                       : '<div class="empty py-3">You\'re not in any groups yet.</div>') +
       '<div class="section-title">' + (isAdmin() ? 'Direct messages' : 'Message a manager') + '</div>' +
       (c.people.length ? '<div class="list">' + c.people.map(function (p) { return row(p, false); }).join('') + '</div>' : '<div class="empty">No one to message yet.</div>'));
+    qs('#newGroup').addEventListener('click', function () { groupEditor(null); });
     var t = setInterval(async function () {
+      if ($sheetHost.innerHTML) return;   // don't redraw under an open sheet
       try { var n = await call('list_conversations', null, { bg: true }); if (JSON.stringify(n) !== JSON.stringify(c)) viewChatList(); } catch (_) {}
     }, 12000);
     S.viewCleanup = function () { clearInterval(t); };
@@ -665,13 +775,17 @@
 
   async function viewChat(key) {
     var c = await call('list_conversations');
-    var conv = key === 'team' ? c.team : c.people.find(function (p) { return p.key === key; });
+    var isGroup = /^g\d+$/.test(key);
+    var conv = key === 'team' ? c.team : isGroup ? c.groups.find(function (g) { return g.key === key; }) : c.people.find(function (p) { return p.key === key; });
     if (!conv) { toast('Conversation not found', true); location.hash = '#/chat'; return; }
     var lastId = 0, lastDay = null;
     render('<div class="chat-wrap">' +
       '<div class="chat-head"><a href="#/chat" class="btn btn-sm btn-outline-secondary" aria-label="Back" style="width:40px">' + I.back + '</a>' +
-      '<span class="avatar' + (key === 'team' || conv.role === 'admin' ? ' admin' : '') + '">' + (key === 'team' ? '👥' : esc(initials(conv.name))) + '</span>' +
-      '<div><div class="fw-bold">' + esc(conv.name) + '</div><div class="small text-muted">' + (key === 'team' ? 'Everyone sees these messages' : 'Private conversation') + '</div></div></div>' +
+      (isGroup ? '<span class="avatar group' + (conv.sys ? ' sys' : '') + '">' + esc(conv.sys ? (conv.kind === 'driver' ? 'DRV' : 'GRD') : initials(conv.name)) + '</span>'
+               : '<span class="avatar' + (key === 'team' || conv.role === 'admin' ? ' admin' : '') + '">' + (key === 'team' ? '👥' : esc(initials(conv.name))) + '</span>') +
+      '<div class="flex-grow-1"><div class="fw-bold">' + esc(conv.name) + '</div><div class="small text-muted">' +
+        (key === 'team' ? 'Everyone sees these messages' : isGroup ? plural(conv.members, 'member') + (conv.sys ? ' · automatic' : '') : 'Private conversation') + '</div></div>' +
+      (isGroup ? '<button class="btn btn-sm btn-outline-secondary" id="grpInfo">Info</button>' : '') + '</div>' +
       '<div class="chat-scroll" id="chatScroll"><div class="empty" id="chatEmpty">No messages yet — say hello 👋</div></div>' +
       '<form class="chat-input" id="chatForm"><textarea class="form-control" id="chatText" rows="1" maxlength="2000" placeholder="Type a message…" aria-label="Message"></textarea>' +
       '<button class="btn btn-primary" aria-label="Send" style="width:56px">' + I.send + '</button></form></div>');
@@ -694,7 +808,7 @@
         if (m.id <= lastId) return;
         var d = dayKey(m.created_at);
         if (d !== lastDay) { html += '<div class="day-sep">' + (d === todayKey() ? 'Today' : esc(fmtDay(m.created_at))) + '</div>'; lastDay = d; }
-        html += '<div class="bubble' + (m.mine ? ' mine' : '') + '">' + (key === 'team' && !m.mine ? '<div class="who">' + esc(m.who) + '</div>' : '') +
+        html += '<div class="bubble' + (m.mine ? ' mine' : '') + '">' + ((key === 'team' || isGroup) && !m.mine ? '<div class="who">' + esc(m.who) + '</div>' : '') +
           esc(m.body) + '<div class="at">' + fmtTime(m.created_at) + '</div></div>';
         lastId = Math.max(lastId, m.id);
       });
@@ -702,14 +816,13 @@
       if (nearBottom) box.scrollTop = box.scrollHeight;
     }
     async function poll() { try { add(await call('get_messages', { p_with: key, p_after: lastId }, { bg: true })); } catch (_) {} }
-    add(await call('get_messages', { p_with: key, p_after: 0 }));
-    pulse();
-    var timer = setInterval(poll, 4000);
+    var timer = null;
     S.viewCleanup = function () {
       clearInterval(timer); window.removeEventListener('resize', fit);
       if (window.visualViewport) window.visualViewport.removeEventListener('resize', fit);
     };
 
+    var gi = qs('#grpInfo'); if (gi) gi.addEventListener('click', function () { groupInfoSheet(key); });
     ta.addEventListener('input', function () { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 120) + 'px'; });
     ta.addEventListener('keydown', function (e) {
       if (e.key === 'Enter' && !e.shiftKey && window.matchMedia('(pointer:fine)').matches) { e.preventDefault(); qs('#chatForm').requestSubmit(); }
@@ -721,31 +834,113 @@
       try { await call('send_message', { p_to: key, p_body: body }); await poll(); box.scrollTop = box.scrollHeight; }
       catch (err) { ta.value = body; errToast(err); }
     });
+    // load the conversation last, so the buttons above work immediately
+    add(await call('get_messages', { p_with: key, p_after: 0 }));
+    pulse();
+    timer = setInterval(poll, 4000);
+  }
+
+  // ------------------------------------------------------------------
+  //  GROUP CHATS
+  // ------------------------------------------------------------------
+  async function groupEditor(existing) {
+    var people;
+    try { people = await call('chat_people', null, { bg: true }); } catch (err) { return errToast(err); }
+    var picked = {};
+    if (existing) existing.members.forEach(function (m) { if (!m.me) picked[m.id] = true; });
+    var w = sheet({
+      title: existing ? 'Edit group' : 'New group',
+      body: '<label class="form-label" for="gName">Group name</label>' +
+        '<input class="form-control mb-3" id="gName" maxlength="60" placeholder="e.g. Night shift crew" value="' + esc(existing ? existing.name : '') + '">' +
+        '<div class="form-label mb-1">Members <span class="fw-normal text-muted" id="gCount"></span></div>' +
+        '<input class="form-control mb-2" id="gSearch" type="search" placeholder="Search names…">' +
+        '<div class="list" id="gPeople" style="max-height:45vh;overflow:auto"></div>' +
+        '<p class="small text-muted mt-2 mb-0">You\'re added automatically. Only members can see the group.</p>',
+      foot: '<button class="btn btn-outline-secondary" data-close>Cancel</button><button class="btn btn-primary" id="gSave">' + (existing ? 'Save' : 'Create group') + '</button>'
+    });
+    function paint() {
+      var q = qs('#gSearch', w).value.toLowerCase();
+      qs('#gPeople', w).innerHTML = people.filter(function (p) { return !q || p.name.toLowerCase().indexOf(q) >= 0; }).map(function (p) {
+        return '<label class="list-row" style="cursor:pointer"><input class="form-check-input flex-none" type="checkbox" data-gp="' + p.id + '"' + (picked[p.id] ? ' checked' : '') + '>' +
+          '<span class="avatar' + (p.role === 'admin' ? ' admin' : '') + '">' + esc(initials(p.name)) + '</span><div class="grow"><div class="ttl">' + esc(p.name) + '</div>' +
+          '<div class="sub">' + esc(posLabel(p.position)) + (p.role === 'admin' ? ' · Manager' : '') + '</div></div></label>';
+      }).join('') || '<div class="empty">No one found.</div>';
+      var n = Object.keys(picked).length; qs('#gCount', w).textContent = n ? '(' + n + ' selected)' : '';
+    }
+    paint();
+    qs('#gSearch', w).addEventListener('input', paint);
+    on(w, 'change', '[data-gp]', function (e, cb) { if (cb.checked) picked[cb.getAttribute('data-gp')] = true; else delete picked[cb.getAttribute('data-gp')]; paint(); });
+    qs('#gSave', w).addEventListener('click', async function (e) {
+      var name = qs('#gName', w).value.trim(), ids = Object.keys(picked);
+      if (!name) return toast('Give the group a name', true);
+      if (!ids.length) return toast('Tick at least one person', true);
+      e.currentTarget.disabled = true;
+      try {
+        if (existing) { await call('update_group', { p_key: existing.key, p_name: name, p_members: ids }, { bg: true }); closeSheet(); toast('Group updated'); route(); }
+        else { var key = await call('create_group', { p_name: name, p_members: ids }, { bg: true }); closeSheet(); toast('Group created'); location.hash = '#/chat/' + key; }
+      } catch (err) { e.currentTarget.disabled = false; errToast(err); }
+    });
+  }
+
+  async function groupInfoSheet(key) {
+    var g;
+    try { g = await call('group_info', { p_key: key }, { bg: true }); } catch (err) { return errToast(err); }
+    var w = sheet({
+      title: g.name,
+      body: (g.sys ? '<div class="alert alert-info small">Everyone whose position is <b>' + (g.kind === 'driver' ? 'Driver' : 'Guard') + '</b> is in this group automatically. Change a person\'s position under Staff to move them.</div>'
+                   : '<p class="small text-muted">Made by ' + esc(g.created_by || '—') + '. Only members can see this group.</p>') +
+        '<div class="form-label mb-1">' + plural(g.members.length, 'member') + '</div>' +
+        '<div class="list">' + g.members.map(function (m) {
+          return '<div class="list-row"><span class="avatar' + (m.role === 'admin' ? ' admin' : '') + '">' + esc(initials(m.name)) + '</span><div class="grow"><div class="ttl">' + esc(m.name) + (m.me ? ' (you)' : '') + '</div>' +
+            '<div class="sub">' + esc(posLabel(m.position)) + (m.role === 'admin' ? ' · Manager' : '') + '</div></div></div>';
+        }).join('') + '</div>',
+      foot: g.sys ? '<button class="btn btn-primary" data-close>Close</button>'
+        : (g.can_manage ? '<button class="btn btn-outline-danger" id="gDel">Delete group</button><button class="btn btn-primary" id="gEdit">Edit name & members</button>' : '') +
+          '<button class="btn btn-outline-secondary" id="gLeave">Leave group</button>'
+    });
+    var ed = qs('#gEdit', w); if (ed) ed.addEventListener('click', function () { groupEditor(g); });
+    var dl = qs('#gDel', w);
+    if (dl) dl.addEventListener('click', async function () {
+      if (!(await confirmSheet('Delete ' + g.name + '?', '<p>The group and its messages disappear for everyone in it.</p>', 'Delete group', true))) return;
+      try { await call('delete_group', { p_key: key }, { bg: true }); toast('Group deleted'); location.hash = '#/chat'; } catch (err) { errToast(err); }
+    });
+    var lv = qs('#gLeave', w);
+    if (lv) lv.addEventListener('click', async function () {
+      if (!(await confirmSheet('Leave ' + g.name + '?', '<p>You won\'t see its messages any more unless someone adds you back.</p>', 'Leave group', true))) return;
+      try { await call('leave_group', { p_key: key }, { bg: true }); toast('You left ' + g.name); location.hash = '#/chat'; } catch (err) { errToast(err); }
+    });
   }
 
   // ------------------------------------------------------------------
   //  ME
   // ------------------------------------------------------------------
-  function viewMe() {
-    var ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  async function viewMe() {
+    var ios = /iphone|ipad|ipod/i.test(navigator.userAgent), seq0 = routeSeq;
+    var notif = await notifCardHtml();
+    if (seq0 !== routeSeq) return;   // user moved on while we checked
     render('<div class="page-title"><h4>My account</h4></div>' +
       '<div class="card mb-3"><div class="card-body d-flex align-items-center gap-3">' +
         '<span class="avatar' + (isAdmin() ? ' admin' : '') + '" style="width:3rem;height:3rem;font-size:1.1rem">' + esc(initials(S.me.name)) + '</span>' +
         '<div><div class="fw-bold fs-5">' + esc(S.me.name) + '</div><div class="text-muted">' + (isAdmin() ? 'Manager' : 'Staff') + '</div></div>' +
         '<button class="btn btn-outline-danger ms-auto" id="signOut">Sign out</button></div></div>' +
+      notif +
       '<div class="card mb-3"><div class="card-header">Change my PIN</div><div class="card-body">' +
         '<form id="pinForm" class="row g-2">' +
           '<div class="col-6"><label class="form-label" for="oldPin">Current PIN</label><input class="form-control" id="oldPin" type="password" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" required></div>' +
           '<div class="col-6"><label class="form-label" for="newPin">New PIN</label><input class="form-control" id="newPin" type="password" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" required></div>' +
           '<div class="col-12"><button class="btn btn-primary">Change PIN</button></div></form></div></div>' +
-      '<div class="card mb-3"><div class="card-header">Put KRD Stores on your home screen</div><div class="card-body">' +
+      '<div class="card mb-3"><div class="card-header">Put Kippa Crew on your home screen</div><div class="card-body">' +
         (ios ? '<p class="mb-0">In <b>Safari</b>, tap the <b>Share</b> button (square with an arrow), then <b>Add to Home Screen</b>.</p>'
              : '<p class="mb-0">In <b>Chrome</b>, tap the <b>⋮</b> menu, then <b>Install app</b> or <b>Add to Home screen</b>.</p>') +
         '<p class="small text-muted mt-2 mb-0">It then opens like a normal app, and you stay signed in.</p></div></div>' +
+      '<a class="list-row mb-3" style="border:1px solid var(--qr-line);border-radius:.5rem" href="#/whatsnew"><span style="width:26px;color:var(--qr-light-blue)">' + I.megaphone + '</span><div class="grow"><div class="ttl">What\'s New</div><div class="sub">Past updates and changes</div></div><span class="text-muted">›</span></a>' +
       (api.isDemo ? '<div class="card mb-3"><div class="card-header">Demo mode</div><div class="card-body"><p>This is a demo running only on this device. Nothing is shared.</p>' +
         '<button class="btn btn-outline-danger" id="resetDemo">Reset demo data</button></div></div>' : '') +
-      '<p class="small text-muted text-center">KRD Stores · Kippa Ring Depot</p>');
+      '<p class="small text-muted text-center">Kippa Crew · Kippa Ring Depot · v' + APP_VERSION + '</p>');
+    wireNotifCard(viewMe);
     qs('#signOut').addEventListener('click', async function () {
+      await disablePush(true);   // so the next person on this phone doesn't get your notifications
+      S.pushCfg = null;
       try { await call('logout'); } catch (_) {}
       signOutLocal(); location.hash = '#/'; route();
     });
@@ -764,7 +959,7 @@
   function kindLabel(k) { return { take: 'Taken', receive: 'Received', adjust: 'Adjusted', stocktake: 'Stocktake', undo: 'Undo' }[k] || k; }
   function kindBadge(k) { return { take: 'bg-primary', receive: 'bg-success', adjust: 'bg-warning', stocktake: 'bg-info', undo: 'bg-secondary' }[k] || 'bg-secondary'; }
   function reorderText(low) {
-    return 'Kippa Ring Depot Stores — reorder list ' + fmtDate(new Date().toISOString()) + '\n\n' +
+    return 'Kippa Ring Depot — stores reorder list ' + fmtDate(new Date().toISOString()) + '\n\n' +
       low.map(function (i) { return '• ' + i.name + (i.code ? ' [' + i.code + ']' : '') + ' — order ' + i.suggest + ' ' + i.unit + ' (on hand ' + i.on_hand + ', par ' + i.par + ')'; }).join('\n');
   }
 
@@ -773,7 +968,7 @@
     var d = await call('admin_dashboard');
     S.pulse.low = d.low.length; renderNav();
     render(
-      '<div id="bcBanner"></div>' +
+      '<div id="bcBanner"></div><div id="pushPrompt"></div>' +
       '<div class="page-title"><h4>G\'day, ' + esc(S.me.name.split(' ')[0]) + '</h4><span class="small text-muted">' + esc(fmtDay(new Date().toISOString())) + '</span></div>' +
       '<div class="tiles mb-3">' +
         '<a class="tile' + (d.low.length ? ' is-alert' : '') + '" href="#/stock?low"><div class="tile-n">' + d.low.length + '</div><div class="tile-l">To reorder</div></a>' +
@@ -804,7 +999,7 @@
           '<div class="grow"><div class="ttl"' + (t.undone ? ' style="text-decoration:line-through;opacity:.6"' : '') + '>' + Math.abs(t.qty) + ' × ' + esc(t.item) + '</div>' +
           '<div class="sub">' + esc(t.who || '—') + ' · ' + esc(when(t.created_at)) + (t.note ? ' · ' + esc(t.note) : '') + '</div></div></div>';
       }).join('') + '</div><div class="text-center mt-2"><a href="#/reports">See all activity →</a></div>' : '<div class="empty">No activity yet.</div>'));
-    paintBroadcastBanner();
+    paintBroadcastBanner(); paintPushPrompt();
     var co = qs('#copyOrder'); if (co) co.addEventListener('click', function () { copyText(reorderText(d.low)); });
     var cc = qs('#csvOrder'); if (cc) cc.addEventListener('click', function () {
       download('KRD-reorder-' + todayKey() + '.csv', toCsv([['Item', 'Code', 'Category', 'Unit', 'On hand', 'Par', 'Suggested order']].concat(
@@ -827,6 +1022,7 @@
         row('#/import', I.upload, 'Import items', 'Paste your list from Excel') +
       '</div><div class="list mb-3">' +
         row('#/staff', I.users, 'Staff', 'Add people, reset PINs') +
+        row('#/whatsnew', I.megaphone, 'What\'s New', 'Post app updates & notes everyone sees once') +
         row('#/settings', I.gear, 'Settings', 'Reorder emails and daily summary') +
         row('#/history', I.history, 'My takes', 'What you have logged yourself') +
         row('#/me', I.me, 'My account', 'Change PIN, sign out, install app') +
@@ -841,7 +1037,7 @@
     if (lowParam) stockFilter.low = true;
     loading();
     var items = await call('list_items');
-    S.items = items;
+    S.items = items; S.anyImg = items.some(function (i) { return i.img; });
     render('<div class="page-title"><h4>Items & stock</h4><button class="btn btn-primary" id="addItem">' + '+ Add item</button></div>' +
       '<div class="search-bar"><input class="form-control mb-2" id="sSearch" type="search" placeholder="Search items…" value="' + esc(stockFilter.q) + '">' +
       '<div class="seg mb-1"><button data-f="all" class="' + (stockFilter.low ? '' : 'active') + '">All (' + items.length + ')</button>' +
@@ -855,7 +1051,7 @@
       list.forEach(function (i) {
         if (i.category !== lastCat) { if (lastCat !== null) html += '</div>'; html += '<div class="cat-head">' + esc(i.category) + '</div><div class="list">'; lastCat = i.category; }
         var pct = i.par > 0 ? Math.min(100, Math.round(i.on_hand / (Math.max(i.order_up_to || i.par * 2, 1)) * 100)) : 100;
-        html += '<button class="list-row" data-edit="' + i.id + '"><div class="grow"><div class="ttl">' + esc(i.name) + '</div>' +
+        html += '<button class="list-row" data-edit="' + i.id + '">' + thumbHtml(i, S.anyImg).replace('<button type="button" class="thumb"', '<span class="thumb"').replace('</button>', '</span>').replace(/ data-zoom="[^"]*"/, '') + '<div class="grow"><div class="ttl">' + esc(i.name) + '</div>' +
           '<div class="sub">' + esc(i.unit) + (i.code ? ' · ' + esc(i.code) : '') + ' · par ' + i.par + '</div>' +
           (i.par > 0 ? '<div class="low-bar' + (i.low ? ' is-low' : '') + '"><span style="width:' + Math.max(pct, 3) + '%"></span></div>' : '') + '</div>' +
           '<div class="text-end"><div class="fs-4 fw-bold' + (i.low ? ' text-danger' : '') + '" style="line-height:1">' + i.on_hand + '</div>' +
@@ -863,8 +1059,9 @@
       });
       if (lastCat !== null) html += '</div>';
       qs('#stockList').innerHTML = html || '<div class="empty">' + (items.length ? 'Nothing matches.' : 'No items yet. Add one or import your list.') + '</div>';
+      paintThumbs();
     }
-    paint();
+    paint(); loadThumbs(items);
     qs('#sSearch').addEventListener('input', debounce(function (e) { stockFilter.q = e.target.value; paint(); }, 120));
     on($app, 'click', '[data-f]', function (e, b) { stockFilter.low = b.getAttribute('data-f') === 'low'; qsa('[data-f]').forEach(function (x) { x.classList.toggle('active', x === b); }); paint(); });
     on($app, 'click', '[data-edit]', function (e, b) { editItem(items.find(function (i) { return i.id === b.getAttribute('data-edit'); }), items); });
@@ -886,7 +1083,13 @@
     }
     var w = sheet({
       title: isNew ? 'Add item' : 'Edit item',
-      body: '<form id="itemForm" class="row g-3">' +
+      body: '<div class="item-photo mb-3"><div class="item-photo-box" id="iPhotoBox">' +
+          (item.img && IMG[item.id] ? '<img src="' + IMG[item.id].url + '" alt="">' : '<span class="text-muted small">No photo</span>') + '</div>' +
+          '<div class="d-flex flex-column gap-2"><label class="btn btn-outline-primary mb-0">' + (item.img ? 'Change photo' : 'Add photo') +
+          '<input type="file" accept="image/*" id="iPhoto" hidden></label>' +
+          '<button type="button" class="btn btn-outline-danger' + (item.img ? '' : ' d-none') + '" id="iPhotoRm">Remove photo</button>' +
+          '<div class="small text-muted" id="iPhotoMsg">Staff see this when taking items.</div></div></div>' +
+        '<form id="itemForm" class="row g-3">' +
         f('iName', 'Item name', item.name, 'text', { req: true }) +
         f('iCat', 'Category', item.category, 'text', { col: 'col-6', list: 'catList' }) +
         f('iUnit', 'Unit', item.unit, 'text', { col: 'col-6', list: 'unitList' }) +
@@ -899,18 +1102,45 @@
         '<datalist id="catList">' + cats.map(function (c) { return '<option value="' + esc(c) + '">'; }).join('') + '</datalist>' +
         '<datalist id="unitList">' + units.map(function (c) { return '<option value="' + esc(c) + '">'; }).join('') + '</datalist>' +
         '</form>',
+      onClose: function () { if (changedPhoto) route(); },
       foot: (isNew ? '' : '<button class="btn btn-outline-danger me-auto" id="iArchive">Remove</button>') +
         '<button class="btn btn-outline-secondary" data-close>Cancel</button><button class="btn btn-primary" id="iSave">Save</button>'
     });
-    var onIn = qs('#iOn', w);
+    var onIn = qs('#iOn', w), pendingPhoto = null;
+    qs('#iPhoto', w).addEventListener('change', async function (e) {
+      var file = e.target.files && e.target.files[0]; e.target.value = ''; if (!file) return;
+      var box = qs('#iPhotoBox', w), msg = qs('#iPhotoMsg', w);
+      try {
+        if (isNew) {
+          pendingPhoto = file; var prev = await itemPhotoBlob(file);
+          box.innerHTML = '<img src="' + URL.createObjectURL(prev) + '" alt="">'; msg.textContent = 'Photo will be saved with the item.';
+        } else {
+          msg.textContent = 'Uploading…';
+          await uploadItemPhoto(item.id, file);
+          box.innerHTML = '<img src="' + IMG[item.id].url + '" alt="">'; msg.textContent = 'Photo saved ✓';
+          qs('#iPhotoRm', w).classList.remove('d-none'); changedPhoto = true;
+          qs('.item-photo label', w).firstChild.nodeValue = 'Change photo';
+        }
+      } catch (err) { msg.textContent = ''; errToast(err); }
+    });
+    var changedPhoto = false;
+    qs('#iPhotoRm', w).addEventListener('click', async function () {
+      if (isNew) { pendingPhoto = null; qs('#iPhotoBox', w).innerHTML = '<span class="text-muted small">No photo</span>'; return; }
+      try {
+        await call('remove_item_image', { p_item_id: item.id }, { bg: true }); delete IMG[item.id];
+        qs('#iPhotoBox', w).innerHTML = '<span class="text-muted small">No photo</span>'; qs('#iPhotoRm', w).classList.add('d-none');
+        qs('#iPhotoMsg', w).textContent = 'Photo removed'; changedPhoto = true;
+      } catch (err) { errToast(err); }
+    });
     if (!isNew) onIn.addEventListener('input', function () { qs('#adjWrap', w).classList.toggle('d-none', int(onIn.value) === item.on_hand); });
     qs('#iSave', w).addEventListener('click', async function () {
       var form = qs('#itemForm', w); if (!form.reportValidity()) return;
       try {
-        await call('save_item', { p_item: {
+        var saved = await call('save_item', { p_item: {
           id: isNew ? null : item.id, name: qs('#iName', w).value, category: qs('#iCat', w).value, unit: qs('#iUnit', w).value,
           code: qs('#iCode', w).value, on_hand: int(onIn.value) || 0, par: int(qs('#iPar', w).value) || 0,
           order_up_to: int(qs('#iUpTo', w).value), max_per_take: int(qs('#iMax', w).value), adjust_note: qs('#iAdj', w).value } });
+        if (isNew && pendingPhoto) { try { await uploadItemPhoto(saved.id, pendingPhoto); } catch (err) { toast('Item saved, but the photo failed: ' + err.message, true); } }
         closeSheet(); toast(isNew ? 'Item added' : 'Saved'); route();
       } catch (err) { errToast(err); }
     });
@@ -1084,12 +1314,15 @@
       var q = filter.q.toLowerCase(), lastCat = null, html = '';
       st.items.filter(function (i) { return (!filter.uncounted || i.counted == null) && (!q || i.name.toLowerCase().indexOf(q) >= 0); }).forEach(function (i) {
         if (i.category !== lastCat) { html += '<div class="cat-head">' + esc(i.category) + '</div>'; lastCat = i.category; }
-        html += '<div class="count-row' + (i.counted != null ? ' is-counted' : '') + '" id="c-' + i.id + '"><div class="grow"><div class="item-name">' + esc(i.name) + '</div><div class="item-meta">' + esc(i.unit) + ' <span data-state></span></div></div>' +
+        html += '<div class="count-row' + (i.counted != null ? ' is-counted' : '') + '" id="c-' + i.id + '">' + thumbHtml(i, anyImg) + '<div class="grow"><div class="item-name">' + esc(i.name) + '</div><div class="item-meta">' + esc(i.unit) + ' <span data-state></span></div></div>' +
           '<input class="form-control" type="number" inputmode="numeric" min="0" step="1" placeholder="–" data-c="' + i.id + '" value="' + (i.counted == null ? '' : i.counted) + '" aria-label="Count for ' + esc(i.name) + '"></div>';
       });
       qs('#cList').innerHTML = html || '<div class="empty">' + (filter.uncounted ? 'Everything has been counted 🎉' : 'Nothing matches.') + '</div>';
-      prog();
+      prog(); paintThumbs();
     }
+    var anyImg = st.items.some(function (i) { return i.img; });
+    loadThumbs(st.items);
+    on($app, 'click', '[data-zoom]', function (e, b) { zoomPhoto(st.items.find(function (i) { return i.id === b.getAttribute('data-zoom'); })); });
     var saveCount = async function (id, inp) {
       var raw = inp.value.trim(), v = raw === '' ? null : int(raw);
       if (raw !== '' && (v == null || v < 0)) { toast('Enter a whole number', true); return; }
@@ -1293,22 +1526,30 @@
     var st = await call('get_settings'); S.defaultPin = st.default_pin || '0000';
     render('<div class="page-title"><h4>Staff</h4><button class="btn btn-primary" id="addP">+ Add person</button></div>' +
       '<p class="text-muted" style="margin-top:-.5rem">Everyone signs in by tapping their name and entering their 4-digit PIN.</p>' +
-      '<div class="list">' + list.map(function (p) {
+      '<div class="list">' + list.filter(function (p) { return p.active; }).map(function (p) {
         return '<button class="list-row" data-p="' + p.id + '"' + (p.active ? '' : ' style="opacity:.55"') + '><span class="avatar' + (p.role === 'admin' ? ' admin' : '') + '">' + esc(initials(p.name)) + '</span>' +
-          '<div class="grow"><div class="ttl">' + esc(p.name) + '</div><div class="sub">' + (p.last_login ? 'Last signed in ' + esc(ago(p.last_login)) : 'Never signed in') + '</div></div>' +
+          '<div class="grow"><div class="ttl">' + esc(p.name) + '</div><div class="sub">' + esc(posLabel(p.position)) + ' · ' + (p.last_login ? 'Last signed in ' + esc(ago(p.last_login)) : 'Never signed in') + '</div></div>' +
           (p.locked ? '<span class="badge bg-danger">Locked</span> ' : '') + (p.active && p.must_change_pin ? '<span class="badge bg-warning me-1">New PIN needed</span>' : '') + (p.active && p.role !== 'admin' && p.can_broadcast ? '<span class="badge bg-info me-1">Broadcaster</span>' : '') + (!p.active ? '<span class="badge bg-secondary">Inactive</span>' : p.role === 'admin' ? '<span class="badge bg-navy">Manager</span>' : '') + '</button>';
       }).join('') + '</div>' +
+      (list.some(function (p) { return !p.active; }) ? '<details class="mt-3"><summary>Former staff (' + list.filter(function (p) { return !p.active; }).length + ')</summary><div class="list mt-2">' +
+        list.filter(function (p) { return !p.active; }).map(function (p) {
+          return '<button class="list-row" data-p="' + p.id + '"><span class="avatar" style="background:var(--qr-dark-grey)">' + esc(initials(p.name)) + '</span><div class="grow"><div class="ttl">' + esc(p.name) + '</div><div class="sub">' + esc(posLabel(p.position)) + ' · removed</div></div><span class="small text-muted">Bring back ›</span></button>';
+        }).join('') + '</div></details>' : '') +
       '<div class="alert alert-secondary mt-3 small mb-0">New people start with the default PIN <b>' + esc(S.defaultPin) + '</b> (change it in <a href="#/settings">Settings</a>). ' +
       'The first time they sign in, the app makes them choose their own. If someone forgets their PIN, tap their name → <b>Reset PIN</b>.</div>');
     qs('#addP').addEventListener('click', function () { editPerson(null); });
     on($app, 'click', '[data-p]', function (e, b) { editPerson(list.find(function (x) { return x.id === b.getAttribute('data-p'); })); });
   }
+  function posLabel(p) { return { driver: 'Driver', guard: 'Guard' }[p] || 'Other'; }
   function editPerson(p) {
     var isNew = !p; p = p || { name: '', role: 'staff', active: true };
     var w = sheet({
       title: isNew ? 'Add person' : 'Edit ' + p.name,
       body: '<form id="pForm" class="row g-3">' +
         '<div class="col-12"><label class="form-label" for="pName">Name</label><input class="form-control" id="pName" required value="' + esc(p.name) + '" autocomplete="off"><div class="form-text">As it should appear on the sign-in screen.</div></div>' +
+        '<div class="col-6"><label class="form-label" for="pPos">Position</label><select class="form-select" id="pPos">' +
+          [['driver', 'Driver'], ['guard', 'Guard'], ['other', 'Other']].map(function (o) { return '<option value="' + o[0] + '"' + ((p.position || (isNew ? '' : 'other')) === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
+          '</select><div class="form-text">Puts them in the Drivers or Guards chat</div></div>' +
         '<div class="col-6"><label class="form-label" for="pRole">Access</label><select class="form-select" id="pRole"><option value="staff"' + (p.role === 'staff' ? ' selected' : '') + '>Staff</option><option value="admin"' + (p.role === 'admin' ? ' selected' : '') + '>Manager</option></select></div>' +
         (isNew ? '<div class="col-6"><label class="form-label" for="pPin">Starting PIN</label><input class="form-control" id="pPin" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" placeholder="' + esc(S.defaultPin || '0000') + '" autocomplete="off">' +
           '<div class="form-text">Blank = default PIN</div></div>'
@@ -1316,13 +1557,32 @@
           '<div class="form-text">' + (p.locked ? '<span class="text-danger fw-bold">Locked out</span> — reset unlocks' : p.must_change_pin ? 'Hasn\'t chosen their own yet' : 'Forgotten? Reset it') + '</div></div>') +
         (isNew ? '<div class="col-12 small text-muted" style="margin-top:.25rem">They\'ll choose their own PIN the first time they sign in.</div>' : '') +
         '<div class="col-12" id="pBcWrap"><div class="form-check form-switch"><input class="form-check-input" type="checkbox" role="switch" id="pBc"' + (p.can_broadcast ? ' checked' : '') + '><label class="form-check-label" for="pBc"><b>Can send TOI broadcasts</b> (e.g. depot supervisor)</label></div></div>' +
-        '<div class="col-12"><div class="form-check form-switch"><input class="form-check-input" type="checkbox" role="switch" id="pActive"' + (p.active ? ' checked' : '') + '><label class="form-check-label" for="pActive">Active (can sign in)</label></div></div>' +
+        '<input type="checkbox" id="pActive" hidden' + (p.active ? ' checked' : '') + '>' +
+        (!isNew && !p.active ? '<div class="col-12"><div class="alert alert-warning mb-0">' + esc(p.name) + ' was removed (left the depot). Press <b>Bring back</b> to let them sign in again.</div></div>' : '') +
         '<div class="col-12 small text-muted">Managers can see stock levels, do stocktakes, change items, read everyone\'s activity and send TOI broadcasts.</div>' +
         '</form>',
-      foot: '<button class="btn btn-outline-secondary" data-close>Cancel</button><button class="btn btn-primary" id="pSave">Save</button>'
+      foot: (!isNew && p.id !== S.me.id ? (p.active ? '<button class="btn btn-outline-danger me-auto" id="pRemove">Remove (left depot)</button>'
+                                                      : '<button class="btn btn-success me-auto" id="pBack">Bring back</button>') : '') +
+        '<button class="btn btn-outline-secondary" data-close>Cancel</button><button class="btn btn-primary" id="pSave">Save</button>'
+    });
+    var rmv = qs('#pRemove', w);
+    if (rmv) rmv.addEventListener('click', async function () {
+      if (!(await confirmSheet('Remove ' + p.name + '?',
+        '<p>Use this when someone leaves Kippa Ring Depot. They will:</p><ul>' +
+        '<li>be signed out straight away and can\'t sign in again</li><li>disappear from the sign-in list, chats and groups</li>' +
+        '<li>stop counting in broadcast and What\'s New read counts</li></ul>' +
+        '<p class="mb-0">Everything they logged stays in your reports and TRACKS history. You can bring them back later from <b>Former staff</b>.</p>', 'Remove', true))) return;
+      try { await call('save_staff', { p_person: { id: p.id, name: p.name, role: p.role, active: false, can_broadcast: p.can_broadcast, position: p.position || 'other' } }); toast(p.name + ' removed'); route(); }
+      catch (err) { errToast(err); }
+    });
+    var bk = qs('#pBack', w);
+    if (bk) bk.addEventListener('click', async function () {
+      try { await call('save_staff', { p_person: { id: p.id, name: p.name, role: p.role, active: true, can_broadcast: p.can_broadcast, position: p.position || 'other' } }); toast(p.name + ' is back — their old PIN still works'); route(); }
+      catch (err) { errToast(err); }
     });
     function bcVis() { var adm = qs('#pRole', w).value === 'admin'; qs('#pBcWrap', w).classList.toggle('d-none', adm); }
     qs('#pRole', w).addEventListener('change', bcVis); bcVis();
+    if (isNew) { var ps = qs('#pPos', w); ps.insertAdjacentHTML('afterbegin', '<option value="" selected disabled>Choose…</option>'); ps.required = true; }
     var rb = qs('#pReset', w);
     if (rb) rb.addEventListener('click', async function () {
       if (!(await confirmSheet('Reset ' + p.name + '\'s PIN?', '<p>Their PIN goes back to the default PIN <b>' + esc(S.defaultPin || '0000') + '</b> and they\'re signed out on their phone. When they next sign in, they\'ll choose a new PIN.</p>', 'Reset PIN', true))) return;
@@ -1336,7 +1596,7 @@
       if (!qs('#pForm', w).reportValidity()) return;
       var pinEl = qs('#pPin', w), pin = pinEl ? pinEl.value.trim() : '', name = qs('#pName', w).value.trim();
       try {
-        var res = await call('save_staff', { p_person: { id: isNew ? null : p.id, name: name, role: qs('#pRole', w).value, active: qs('#pActive', w).checked, can_broadcast: qs('#pBc', w).checked, pin: pin || null } });
+        var res = await call('save_staff', { p_person: { id: isNew ? null : p.id, name: name, role: qs('#pRole', w).value, active: qs('#pActive', w).checked, can_broadcast: qs('#pBc', w).checked, position: qs('#pPos', w).value, pin: pin || null } });
         closeSheet();
         if (isNew) {
           sheet({ title: name + ' added', body: '<p>Send <b>' + esc(name) + '</b> the app link and tell them to sign in with:</p><p class="display-5 fw-bold text-center" style="letter-spacing:.3em;color:var(--qr-dark-blue)">' + esc(res.pin || pin) + '</p>' +
@@ -1353,6 +1613,17 @@
     loading();
     var s = await call('get_settings');
     var appUrl = s.app_url || (location.origin + location.pathname);
+    var seq0 = routeSeq, pc = await pushCfg(true);
+    if (seq0 !== routeSeq) return;
+    var fnUrl = String((window.KRD_CONFIG || {}).SUPABASE_URL || '').replace(/\/+$/, '') + '/functions/v1/kippa-push';
+    var pushCard = '<div class="card mb-3"><div class="card-header">🔔 Phone notifications</div><div class="card-body">' +
+      (api.isDemo ? '<p class="mb-0">Available in the live app.</p>'
+       : pc.ready ? '<p class="mb-2">✅ <b>Connected.</b> ' + pc.people_on + ' of ' + pc.people_total + ' people have turned notifications on.</p>' +
+                    '<p class="small text-muted mb-2">Banners go out for new TOI broadcasts, chat messages, and (to managers) items reaching par. Each person turns them on under <b>Me</b>.</p>' +
+                    '<button type="button" class="btn btn-outline-primary btn-sm" id="pushReconnect">Re-check connection</button>'
+       : '<p>Not connected yet. First add the <b>kippa-push</b> function in Supabase (see the setup guide), then press:</p>' +
+         '<button type="button" class="btn btn-primary" id="pushConnect">Connect notifications</button>') +
+      '</div></div>';
     render('<div class="page-title"><h4>Settings</h4></div>' +
       (api.isDemo ? '<div class="alert alert-warning">Demo mode — emails are not really sent.</div>' : '') +
       '<form id="setForm"><div class="card mb-3"><div class="card-header">Reorder emails</div><div class="card-body">' +
@@ -1361,6 +1632,7 @@
         '<div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" role="switch" id="sInstant"' + (s.instant_alerts ? ' checked' : '') + '><label class="form-check-label" for="sInstant"><b>Instant alert</b> when an item reaches its par level</label></div>' +
         '<div class="form-check form-switch mb-0"><input class="form-check-input" type="checkbox" role="switch" id="sDaily"' + (s.daily_summary ? ' checked' : '') + '><label class="form-check-label" for="sDaily"><b>Daily summary</b> at 7:00am (reorder list + what was taken yesterday)</label></div>' +
       '</div></div>' +
+      pushCard +
       '<div class="card mb-3"><div class="card-header">Staff sign-in</div><div class="card-body">' +
         '<label class="form-label" for="sDefPin">Default PIN for new staff & PIN resets</label><input class="form-control" id="sDefPin" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" required value="' + esc(s.default_pin || '0000') + '" style="max-width:9rem">' +
         '<div class="form-text">People sign in with this once, then must choose their own PIN.</div></div></div>' +
@@ -1386,6 +1658,21 @@
       } catch (err) { errToast(err); }
     }
     log();
+    async function connectPush(btn) {
+      btn.disabled = true;
+      try {
+        var k = String((window.KRD_CONFIG || {}).SUPABASE_ANON_KEY || '');
+        var res = await fetch(fnUrl, { method: 'POST', headers: { 'Content-Type': 'application/json', apikey: k }, body: JSON.stringify({ action: 'init' }) });
+        var out = {}; try { out = await res.json(); } catch (_) {}
+        if (res.status === 401) throw new Error('Supabase blocked it: turn OFF "Verify JWT" for the kippa-push function, then try again.');
+        if (res.status === 404) throw new Error('No kippa-push function found. Check it\'s deployed with exactly that name.');
+        if (!res.ok || !out.ok) throw new Error(out.error || ('Connection failed (' + res.status + ')'));
+        toast('🔔 Notifications connected. Now turn them on under Me.');
+        viewSettings();
+      } catch (err) { btn.disabled = false; errToast(err.message === 'Failed to fetch' ? { message: 'Couldn\'t reach the kippa-push function. Check it\'s deployed and "Verify JWT" is off.' } : err); }
+    }
+    var pcb = qs('#pushConnect') || qs('#pushReconnect');
+    if (pcb) pcb.addEventListener('click', function () { connectPush(pcb); });
     qs('#sRefresh').addEventListener('click', log);
     qs('#copyUrl').addEventListener('click', function () { copyText(qs('#shareUrl').value); });
     qs('#setForm').addEventListener('submit', async function (e) {
@@ -1560,7 +1847,7 @@
     if (!S.me.can_broadcast && !isAdmin()) { location.hash = '#/broadcasts'; return; }
     var files = [];   // {file, url}
     render('<div class="d-flex align-items-center gap-2 mb-2"><a href="#/broadcasts" class="btn btn-sm btn-outline-secondary" aria-label="Back" style="width:40px">' + I.back + '</a><h4 class="m-0">New TOI broadcast</h4></div>' +
-      '<p class="text-muted">Goes to <b>everyone</b> in KRD Stores.</p>' +
+      '<p class="text-muted">Goes to <b>everyone</b> in Kippa Crew.</p>' +
       '<form id="bcForm" class="card mb-3"><div class="card-body">' +
         '<div class="mb-3"><label class="form-label" for="bcTitle">Title</label><input class="form-control" id="bcTitle" maxlength="150" required placeholder="e.g. Track work Saturday – Petrie to Kippa-Ring"></div>' +
         '<div class="mb-3"><label class="form-label" for="bcBody">Message</label><textarea class="form-control" id="bcBody" rows="6" maxlength="5000" placeholder="What does everyone need to know?"></textarea></div>' +
@@ -1623,6 +1910,187 @@
   }
 
   // ------------------------------------------------------------------
+  //  PHONE NOTIFICATIONS (Web Push)
+  // ------------------------------------------------------------------
+  var IS_IOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  function isInstalled() { return window.navigator.standalone === true || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches); }
+  function pushSupported() { return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window && window.isSecureContext; }
+  function u8FromB64url(s) {
+    s = s.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '=';
+    var bin = atob(s), out = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i); return out;
+  }
+  function deviceLabel() {
+    var ua = navigator.userAgent;
+    var m = /iPhone|iPad|Android|Windows|Macintosh/.exec(ua); var b = /SamsungBrowser/.test(ua) ? 'Samsung Internet' : /Edg\//.test(ua) ? 'Edge' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : 'Browser';
+    return (m ? m[0] : 'Device') + ' · ' + b;
+  }
+  async function pushCfg(force) {
+    if (api.isDemo) return { ready: false, demo: true };
+    if (!S.pushCfg || force) { try { S.pushCfg = await call('push_config', null, { bg: true }); } catch (_) { S.pushCfg = { ready: false }; } }
+    return S.pushCfg;
+  }
+  async function currentSub() {
+    if (!pushSupported()) return null;
+    try { var reg = await navigator.serviceWorker.ready; return await reg.pushManager.getSubscription(); } catch (_) { return null; }
+  }
+  // Must be called from a button tap (iPhone requires it)
+  async function enablePush() {
+    if (api.isDemo) return toast('Phone notifications work in the live app, not the demo.', true);
+    if (!pushSupported()) {
+      if (IS_IOS && !isInstalled()) return toast('On iPhone, first add Kippa Crew to your Home Screen, then open it from there.', true);
+      return toast('This browser can\'t show notifications. Try Chrome or Samsung Internet.', true);
+    }
+    var cfg = await pushCfg(true);
+    if (!cfg.ready) return toast('Notifications aren\'t set up yet — a manager needs to connect them in Settings.', true);
+    var perm = await Notification.requestPermission();
+    if (perm !== 'granted') return toast(perm === 'denied' ? 'Notifications are blocked for this app. Allow them in your phone\'s settings, then try again.' : 'Notifications not turned on.', true);
+    var reg = await navigator.serviceWorker.ready;
+    var sub = await reg.pushManager.getSubscription();
+    if (sub && sub.options && sub.options.applicationServerKey) {
+      var have = new Uint8Array(sub.options.applicationServerKey), want = u8FromB64url(cfg.public_key);
+      if (have.length !== want.length || have.some(function (b, i) { return b !== want[i]; })) { await sub.unsubscribe(); sub = null; }
+    }
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: u8FromB64url(cfg.public_key) });
+    var j = sub.toJSON();
+    await call('save_push_subscription', { p_endpoint: j.endpoint, p_p256dh: j.keys.p256dh, p_auth: j.keys.auth, p_device: deviceLabel() }, { bg: true });
+    LS.set('pushOn', true);
+    toast('🔔 Notifications are on for this phone');
+    return true;
+  }
+  async function disablePush(quiet) {
+    var sub = await currentSub();
+    if (sub) {
+      try { await api.rpc('remove_push_subscription', { p_endpoint: sub.endpoint }); } catch (_) {}
+      try { await sub.unsubscribe(); } catch (_) {}
+    }
+    LS.del('pushOn');
+    if (!quiet) toast('Notifications turned off for this phone');
+  }
+  // Keep this phone linked to whoever is signed in (endpoints can change over time)
+  async function syncPush() {
+    if (api.isDemo || !S.token || !pushSupported() || Notification.permission !== 'granted') return;
+    var sub = await currentSub(); if (!sub) return;
+    var cfg = await pushCfg(); if (!cfg.ready) return;
+    var j = sub.toJSON();
+    try { await call('save_push_subscription', { p_endpoint: j.endpoint, p_p256dh: j.keys.p256dh, p_auth: j.keys.auth, p_device: deviceLabel() }, { bg: true }); } catch (_) {}
+  }
+  // Small "turn on" card for the Take / Home screens
+  async function paintPushPrompt() {
+    var el = document.getElementById('pushPrompt'); if (!el || api.isDemo || LS.get('pushPromptHidden', false)) return;
+    if (pushSupported() && Notification.permission !== 'default') return;
+    if (!pushSupported() && !(IS_IOS && !isInstalled())) return;
+    var cfg = await pushCfg(); if (!cfg.ready) return;
+    el = document.getElementById('pushPrompt'); if (!el) return;
+    var ios = IS_IOS && !isInstalled();
+    el.innerHTML = '<div class="alert alert-info d-flex gap-2 align-items-start mb-3"><span style="font-size:1.4rem;line-height:1">🔔</span><div class="flex-grow-1">' +
+      '<b>Get a banner on your phone</b> for new TOI broadcasts and messages' + (isAdmin() ? ' (and low stock)' : '') + '.' +
+      (ios ? '<div class="small mt-1">On iPhone: tap <b>Share</b> → <b>Add to Home Screen</b>, open Kippa Crew from there, then turn this on.</div>' : '') +
+      '<div class="d-flex gap-2 mt-2">' + (ios ? '' : '<button class="btn btn-sm btn-primary" id="ppOn">Turn on</button>') +
+      '<button class="btn btn-sm btn-outline-secondary" id="ppLater">Not now</button></div></div></div>';
+    var on1 = document.getElementById('ppOn');
+    if (on1) on1.addEventListener('click', async function () { try { if (await enablePush()) el.innerHTML = ''; } catch (e) { errToast(e); } });
+    document.getElementById('ppLater').addEventListener('click', function () { LS.set('pushPromptHidden', true); el.innerHTML = ''; });
+  }
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('message', function (e) {
+      var m = e.data || {};
+      if (m.type === 'push') pulse();
+      if (m.type === 'open' && m.hash) { location.hash = m.hash; pulse(); }
+    });
+  }
+  async function notifCardHtml() {
+    if (api.isDemo) return '<div class="card mb-3"><div class="card-header">🔔 Phone notifications</div><div class="card-body"><p class="mb-0">Banner notifications work in the live app (not in this demo).</p></div></div>';
+    var cfg = await pushCfg(true), sub = await currentSub(), perm = ('Notification' in window) ? Notification.permission : 'unsupported';
+    var on1 = sub && perm === 'granted' && cfg.my_devices > 0, body;
+    if (!cfg.ready) body = '<p class="mb-0">Not set up yet. ' + (isAdmin() ? 'Connect them in <a href="#/settings">Settings</a>.' : 'Ask a manager to connect them.') + '</p>';
+    else if (!pushSupported() && IS_IOS && !isInstalled()) body = '<p class="mb-0">On iPhone, notifications only work from the Home Screen app: tap <b>Share</b> → <b>Add to Home Screen</b>, open Kippa Crew from there, and come back here.</p>';
+    else if (!pushSupported()) body = '<p class="mb-0">This browser can\'t show notifications. Use Chrome or Samsung Internet (Android), or the Home Screen app (iPhone).</p>';
+    else if (perm === 'denied') body = '<p class="mb-0">Notifications are <b>blocked</b> for this app. Open your phone\'s <b>Settings → Notifications</b> (or the browser\'s site settings), allow Kippa Crew, then come back.</p>';
+    else body = '<p>' + (on1 ? '✅ <b>On</b> for this phone.' : 'Off for this phone.') + ' You\'ll get a banner for new TOI broadcasts and messages' + (isAdmin() ? ', and when stock drops to its par level' : '') + '.</p>' +
+      '<div class="d-flex gap-2 flex-wrap">' + (on1 ? '<button class="btn btn-outline-primary" id="nTest">Send me a test</button><button class="btn btn-outline-danger" id="nOff">Turn off</button>'
+                                                    : '<button class="btn btn-primary" id="nOn">🔔 Turn on notifications</button>') + '</div>';
+    return '<div class="card mb-3" id="notifCard"><div class="card-header">🔔 Phone notifications</div><div class="card-body">' + body + '</div></div>';
+  }
+  function wireNotifCard(rerender) {
+    var a = qs('#nOn'), b = qs('#nOff'), c = qs('#nTest');
+    if (a) a.addEventListener('click', async function () { a.disabled = true; try { await enablePush(); } catch (e) { errToast(e); } rerender(); });
+    if (b) b.addEventListener('click', async function () { await disablePush(); S.pushCfg = null; rerender(); });
+    if (c) c.addEventListener('click', async function () { try { await call('push_test', null, { bg: true }); toast('Test sent — it should pop up in a few seconds'); } catch (e) { errToast(e); } });
+  }
+
+  // ------------------------------------------------------------------
+  //  WHAT'S NEW (patch notes pop-up)
+  // ------------------------------------------------------------------
+  var whatsNewBusy = false;
+  function noteHtml(n) {
+    return '<div class="wn-note"><div class="wn-title">' + esc(n.title) + '</div>' +
+      '<div class="small text-muted mb-2">' + esc(fmtDay(n.published_at)) + (n.by ? ' · ' + esc(n.by) : '') + '</div>' +
+      '<ul class="wn-points">' + n.points.map(function (p) { return '<li>' + linkify(p) + '</li>'; }).join('') + '</ul></div>';
+  }
+  async function maybeWhatsNew() {
+    if (whatsNewBusy || !S.token || !S.me || S.me.must_change_pin || !(S.pulse.whats_new > 0) || $sheetHost.innerHTML) return;
+    if (/^#\/broadcast(s\/new|\/)/.test(location.hash)) return;   // don't interrupt someone reading or writing a broadcast
+    whatsNewBusy = true;
+    try {
+      var notes = await call('whats_new_pending', null, { bg: true });
+      if (!notes.length || $sheetHost.innerHTML) return;
+      var w = sheet({ title: '✨ What\'s New', locked: true,
+        body: notes.map(noteHtml).join('<hr>'),
+        foot: '<button class="btn btn-primary btn-lg w-100" id="wnOk">Got it</button>' });
+      qs('#wnOk', w).addEventListener('click', async function (e) {
+        e.currentTarget.disabled = true;
+        try { await call('ack_whats_new', { p_ids: notes.map(function (n) { return n.id; }) }, { bg: true }); S.pulse.whats_new = 0; closeSheet(); maybeUrgentPopup(); }
+        catch (err) { e.currentTarget.disabled = false; errToast(err); }
+      });
+    } catch (_) {} finally { whatsNewBusy = false; }
+  }
+
+  async function viewWhatsNew() {
+    loading();
+    var notes = await call('list_whats_new');
+    var today = fmtDay(new Date().toISOString());
+    render('<div class="page-title"><h4>What\'s New</h4></div>' +
+      (isAdmin() ? '<div class="card mb-3"><div class="card-header">Post an update</div><div class="card-body">' +
+          '<p class="small text-muted">Everyone sees this as a pop-up the next time they open the app, and taps <b>Got it</b> to close it. It only shows once per person.</p>' +
+          '<label class="form-label" for="wnTitle">Title</label><input class="form-control mb-3" id="wnTitle" maxlength="120" value="Update – ' + esc(today) + '">' +
+          '<label class="form-label" for="wnPoints">Points <span class="fw-normal text-muted">(one per line)</span></label>' +
+          '<textarea class="form-control mb-2" id="wnPoints" rows="7" placeholder="New: item photos on the Take screen&#10;Fixed: chat badge now clears straight away&#10;Reminder: log everything you take"></textarea>' +
+          '<div class="d-flex gap-2 flex-wrap"><button class="btn btn-outline-primary" id="wnFill">Fill in this version\'s app changes</button>' +
+          '<button class="btn btn-outline-secondary" id="wnPreview">Preview</button><button class="btn btn-primary" id="wnPost">Post to everyone</button></div>' +
+        '</div></div>' : '') +
+      '<div class="section-title">' + (isAdmin() ? 'Past updates' : 'Updates') + '</div>' +
+      (notes.length ? notes.map(function (n) {
+        return '<div class="card mb-2"><div class="card-body">' + noteHtml(n) +
+          (isAdmin() ? '<div class="d-flex justify-content-between align-items-center mt-2"><span class="badge bg-navy">Seen by ' + n.seen_count + ' of ' + n.audience + '</span>' +
+            '<button class="btn btn-sm btn-outline-danger" data-wndel="' + n.id + '">Delete</button></div>' : '') + '</div></div>';
+      }).join('') : '<div class="empty">No updates yet.</div>'));
+    if (!isAdmin()) return;
+    function points() { return qs('#wnPoints').value.split('\n').map(function (x) { return x.replace(/^\s*[-•*]\s*/, '').trim(); }).filter(Boolean); }
+    qs('#wnFill').addEventListener('click', function () {
+      var ta = qs('#wnPoints'), cur = ta.value.trim();
+      ta.value = (cur ? cur + '\n' : '') + APP_CHANGES.join('\n');
+      if (/^Update – /.test(qs('#wnTitle').value)) qs('#wnTitle').value = 'Kippa Crew v' + APP_VERSION + ' – ' + today;
+    });
+    qs('#wnPreview').addEventListener('click', function () {
+      if (!points().length) return toast('Add at least one point', true);
+      sheet({ title: '✨ What\'s New', body: '<div class="alert alert-secondary small">Preview — this is what everyone will see.</div>' +
+        noteHtml({ title: qs('#wnTitle').value, published_at: new Date().toISOString(), by: S.me.name, points: points() }),
+        foot: '<button class="btn btn-primary btn-lg w-100" data-close>Got it</button>' });
+    });
+    qs('#wnPost').addEventListener('click', async function () {
+      var pts = points(), title = qs('#wnTitle').value.trim();
+      if (!title) return toast('Give the update a title', true);
+      if (!pts.length) return toast('Add at least one point', true);
+      if (!(await confirmSheet('Post to everyone?', '<p>Everyone will see <b>' + esc(title) + '</b> (' + plural(pts.length, 'point') + ') next time they open the app.</p>', 'Post update'))) return;
+      try { await call('publish_whats_new', { p_title: title, p_points: pts }); toast('Update posted ✨'); viewWhatsNew(); } catch (err) { errToast(err); }
+    });
+    on($app, 'click', '[data-wndel]', async function (e, b) {
+      if (!(await confirmSheet('Delete this update?', '<p>It will be removed from everyone\'s history. People who haven\'t seen it yet won\'t get the pop-up.</p>', 'Delete', true))) return;
+      try { await call('delete_whats_new', { p_id: +b.getAttribute('data-wndel') }); toast('Deleted'); viewWhatsNew(); } catch (err) { errToast(err); }
+    });
+  }
+
+  // ------------------------------------------------------------------
   //  Boot
   // ------------------------------------------------------------------
   if (api.isDemo) {
@@ -1637,6 +2105,6 @@
       catch (e) { if (e.kind === 'network' && S.me) { /* offline: keep cached identity */ } else if (e.kind !== 'session') { signOutLocal(); } }
     }
     await route();
-    pulse(); flushOutbox();
+    pulse(); flushOutbox(); syncPush();
   })();
 })();
