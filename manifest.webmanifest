@@ -1,0 +1,16 @@
+{
+  "name": "KRD Stores – Kippa Ring Depot",
+  "short_name": "KRD Stores",
+  "description": "Log stores you take, stocktakes, reorders and team chat for Kippa Ring Depot.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F7F6F2",
+  "theme_color": "#00768C",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
