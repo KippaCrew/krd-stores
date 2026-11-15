@@ -626,6 +626,7 @@
           cats.map(function (c) { return '<button class="chip' + (takeFilter.cat === c ? ' active' : '') + '" data-cat="' + esc(c) + '">' + esc(c) + '</button>'; }).join('') + '</div>' : '') +
       '</div>' +
       '<div id="itemList" class="item-list"></div>' +
+      (isOffice() ? '' : '<div class="mt-4">' + faultBlock() + '</div>') +
       '<div class="cart-bar" id="cartBar"></div>');
     paintItems(); paintCart(); paintBroadcastBanner(); loadThumbs(S.items); paintPushPrompt();
     on($app, 'click', '[data-zoom]', function (e, b) { zoomPhoto(S.items.find(function (i) { return i.id === b.getAttribute('data-zoom'); })); });
@@ -1016,7 +1017,9 @@
         '<a class="action" href="#/tracks">' + I.export + 'TRACKS entry</a>' +
         '<a class="action" href="#/broadcasts/new">' + I.megaphone + 'TOI broadcast</a>' +
         uniAction(d.uniforms_open) +
+        '<a class="action" href="#/suggestions" style="grid-column:1/-1">' + I.bulb + 'Suggestion box' + (d.suggestions_new ? ' <span class="badge bg-danger ms-1">' + d.suggestions_new + '</span>' : '') + '</a>' +
       '</div>' +
+      faultBlock() +
       '<div class="card mb-3"><div class="card-header d-flex justify-content-between align-items-center"><span>Reorder list</span>' +
         (d.low.length ? '<span class="d-flex gap-1"><button class="btn btn-sm btn-outline-primary" id="copyOrder">' + 'Copy</button><button class="btn btn-sm btn-outline-primary" id="csvOrder">CSV</button></span>' : '') + '</div>' +
         (d.low.length ?
@@ -1061,6 +1064,7 @@
         '<a class="action" href="#/broadcasts/new">' + I.megaphone + 'Depot Announcement</a>' +
         uniAction(S.pulse.uniforms_open) +
       '</div>' +
+      faultBlock() +
       '<div class="list"><a class="list-row" href="#/share"><span style="width:26px;color:var(--qr-light-blue)">' + I.export + '</span><div class="grow"><div class="ttl">Share the app</div><div class="sub">Send the link to the crew</div></div><span class="text-muted">›</span></a></div>');
     paintBroadcastBanner(); paintPushPrompt();
   }
@@ -1918,15 +1922,23 @@
     { title: 'BHAB, BHI Platform, Abbotsford Rd & Rail Centres', sub: 'Office and rail centre buildings', icon: '🏢',
       url: 'https://queenslandrail.service-now.com/service_management?id=sc_cat_item&sys_id=311320bd1b4eb1501ee87510dc4bcbde' }
   ];
+  // Safety-orange "Report a fault" buttons used on the home screens
+  function faultBlock() {
+    return '<div class="fault-block mb-3"><div class="section-title d-flex align-items-center gap-2"><span style="width:22px;color:#B4560F">' + I.wrench + '</span>Report a fault</div>' +
+      '<div class="fault-grid">' + FAULT_FORMS.map(function (f) {
+        return '<a class="btn btn-safety fault-link" href="' + esc(f.url) + '" target="_blank" rel="noopener noreferrer">' +
+          '<span class="fw-bold">' + esc(f.title) + ' ↗</span><span class="small">' + esc(f.sub) + '</span></a>';
+      }).join('') + '</div></div>';
+  }
   function viewFaults() {
     render('<div class="page-title"><h4>Report a fault</h4></div>' +
       '<p class="text-muted">Broken light, leaking tap, faulty door or anything else that needs fixing? Pick the location to open the QR facilities fault form.</p>' +
       FAULT_FORMS.map(function (f) {
-        return '<a class="card mb-3 text-decoration-none fault-link" href="' + esc(f.url) + '" target="_blank" rel="noopener noreferrer" style="border:2px solid var(--qr-light-blue)">' +
+        return '<a class="card mb-3 text-decoration-none fault-link" href="' + esc(f.url) + '" target="_blank" rel="noopener noreferrer" style="border:2px solid var(--qr-orange)">' +
           '<div class="card-body"><div class="d-flex align-items-center gap-3 mb-3">' +
           '<span style="font-size:2rem;line-height:1">' + f.icon + '</span>' +
           '<div><div class="fw-bold fs-5" style="color:var(--qr-ink);line-height:1.25">' + esc(f.title) + '</div><div class="small text-muted">' + esc(f.sub) + '</div></div></div>' +
-          '<span class="btn btn-primary w-100">Report a fault here ↗</span></div></a>';
+          '<span class="btn btn-safety w-100">Report a fault here ↗</span></div></a>';
       }).join('') +
       '<div class="alert alert-light border small"><b>Good to know</b><ul class="mb-0 ps-3 mt-1">' +
         '<li>The form opens on the QR website. You may need to sign in with your QR account.</li>' +

@@ -431,3 +431,12 @@ details > summary { cursor: pointer; color: var(--qr-light-blue); font-weight: 7
 
 .avatar.group.union { background: #fff; border: 1px solid var(--qr-line); padding: 0; overflow: hidden; }
 .avatar.group.union img { width: 100%; height: 100%; object-fit: contain; border-radius: 50%; }
+
+/* Safety orange (QR Safety pillar): orange background takes black text */
+.btn-safety { --bs-btn-bg: #E37222; --bs-btn-border-color: #E37222; --bs-btn-color: #000; --bs-btn-hover-bg: #CF6418; --bs-btn-hover-border-color: #CF6418; --bs-btn-hover-color: #000;
+  --bs-btn-active-bg: #B4560F; --bs-btn-active-border-color: #B4560F; --bs-btn-active-color: #000; --bs-btn-focus-shadow-rgb: 227,114,34;
+  background: #E37222; border-color: #E37222; color: #000; }
+.btn-safety:hover, .btn-safety:focus-visible { background: #CF6418; border-color: #CF6418; color: #000; }
+.fault-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: .6rem; }
+.fault-grid .btn-safety { display: flex; flex-direction: column; align-items: flex-start; text-align: left; gap: .1rem; padding: .8rem 1rem; border-radius: .6rem; min-height: 64px; justify-content: center; }
+.fault-grid .btn-safety .small { font-weight: 400; }
