@@ -1,7 +1,7 @@
 /* Kippa Crew service worker.
    Network-first for the app files (so updates show up straight away),
    falling back to the cache when there's no signal. API calls are never cached. */
-var CACHE = 'kippa-crew-v4';
+var CACHE = 'kippa-crew-v5';
 var SHELL = ['./', 'index.html', 'styles.css', 'config.js', 'js/api.js', 'js/demo.js', 'js/app.js',
              'manifest.webmanifest', 'icons/mark.svg', 'icons/icon-192.png', 'icons/apple-touch-icon.png', 'icons/badge-96.png'];
 
