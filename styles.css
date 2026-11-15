@@ -231,7 +231,7 @@ a.tile:hover { border-color: var(--qr-light-blue); color: var(--qr-ink); }
 
 /* ---------- Big action buttons ---------- */
 .action-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem; }
-.action-grid .action { min-width: 0; overflow-wrap: anywhere; }
+.action-grid .action { min-width: 0; overflow-wrap: break-word; }
 .action {
   display: flex; align-items: center; gap: .7rem; padding: .9rem 1rem; background: #fff;
   border: 2px solid var(--qr-light-blue); border-radius: .5rem; color: var(--qr-dark-blue); font-weight: 700;

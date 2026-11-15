@@ -11,7 +11,7 @@
   var APP_CHANGES = [
     'Uniform orders: when the uniform store sends your order to Kippa Ring, you\'ll get a notification as soon as it arrives',
     'See your uniform orders any time under Me → My uniform orders, and tap "I\'ve picked it up" when you collect it',
-    'Report a fault: orange buttons on the home screen open the Facilities or Building services fault form',
+    'Report a fault: the orange button on the home screen opens the QR Building Faults page',
     'Suggestion box: share ideas or concerns anonymously under Me → Suggestion box. Your name is never saved with it',
     'Union chats: RTBU and AFULE members are added to their union\'s chat automatically'
   ];
@@ -963,7 +963,7 @@
         (ios ? '<p class="mb-0">In <b>Safari</b>, tap the <b>Share</b> button (square with an arrow), then <b>Add to Home Screen</b>.</p>'
              : '<p class="mb-0">In <b>Chrome</b>, tap the <b>⋮</b> menu, then <b>Install app</b> or <b>Add to Home screen</b>.</p>') +
         '<p class="small text-muted mt-2 mb-0">It then opens like a normal app, and you stay signed in.</p></div></div>' +
-      '<a class="list-row mb-2" style="border:1px solid var(--qr-line);border-radius:.5rem" href="#/faults"><span style="width:26px;color:var(--qr-light-blue)">' + I.wrench + '</span><div class="grow"><div class="ttl">Report a fault</div><div class="sub">Facilities fault forms for depots and buildings</div></div><span class="text-muted">›</span></a>' +
+      '<a class="list-row mb-2" style="border:1px solid var(--qr-line);border-radius:.5rem" href="#/faults"><span style="width:26px;color:var(--qr-light-blue)">' + I.wrench + '</span><div class="grow"><div class="ttl">Report a fault</div><div class="sub">Building and facilities faults</div></div><span class="text-muted">›</span></a>' +
       (!isAdmin() ? '<a class="list-row mb-2" style="border:1px solid var(--qr-line);border-radius:.5rem" href="#/suggest"><span style="width:26px;color:var(--qr-light-blue)">' + I.bulb + '</span><div class="grow"><div class="ttl">Suggestion box</div><div class="sub">Share an idea or concern — anonymously</div></div><span class="text-muted">›</span></a>' : '') +
       '<a class="list-row mb-2" style="border:1px solid var(--qr-line);border-radius:.5rem" href="#/my-uniforms"><span style="width:26px;color:var(--qr-light-blue)">' + I.shirt + '</span><div class="grow"><div class="ttl">My uniform orders' + (S.pulse.uniforms_ready ? ' <span class="badge bg-danger">' + S.pulse.uniforms_ready + ' ready</span>' : '') + '</div><div class="sub">Orders sent to the depot for you</div></div><span class="text-muted">›</span></a>' +
       '<a class="list-row mb-3" style="border:1px solid var(--qr-line);border-radius:.5rem" href="#/whatsnew"><span style="width:26px;color:var(--qr-light-blue)">' + I.megaphone + '</span><div class="grow"><div class="ttl">What\'s New</div><div class="sub">Past updates and changes</div></div><span class="text-muted">›</span></a>' +
@@ -1099,7 +1099,7 @@
           row('#/broadcasts/new', I.megaphone, 'Send a Depot Announcement', 'A notice to everyone, with PDFs & photos') +
           row('#/receive', I.truck, 'Receive a delivery', 'Add stock that has arrived') +
           row('#/uniforms', I.shirt, 'Uniform collections', 'Orders from TRACKS coming to the depot') +
-          row('#/faults', I.wrench, 'Report a fault', 'Facilities fault forms') +
+          row('#/faults', I.wrench, 'Report a fault', 'Building and facilities faults') +
           row('#/count', I.count, 'Stocktake', 'Blind count of the store room') +
         '</div><div class="list mb-3">' +
           row('#/staff', I.users, 'Staff', 'Add people, reset PINs') +
@@ -1114,7 +1114,7 @@
         row('#/broadcasts', I.megaphone, 'TOI Broadcasts', 'Notices to everyone, with PDFs & photos') +
         row('#/receive', I.truck, 'Receive a delivery', 'Add stock that has arrived') +
         row('#/uniforms', I.shirt, 'Uniform collections', 'Orders from TRACKS coming to the depot') +
-        row('#/faults', I.wrench, 'Report a fault', 'Facilities fault forms') +
+        row('#/faults', I.wrench, 'Report a fault', 'Building and facilities faults') +
         row('#/tracks', I.export, 'TRACKS entry', 'Everything taken since you last entered it') +
         row('#/reports', I.chart, 'Reports', 'Usage by item and by person, CSV export') +
         row('#/stock', I.stock, 'Items & par levels', 'Add, edit, adjust stock') +
@@ -1917,10 +1917,8 @@
   //  REPORT A FAULT — opens QR's facilities fault forms (ServiceNow)
   // ------------------------------------------------------------------
   var FAULT_FORMS = [
-    { title: 'Facilities', sub: 'Yards & depots, including Kippa Ring Depot', icon: '🚉',
-      url: 'https://queenslandrail.service-now.com/service_management?id=sc_cat_item&sys_id=ecc0e3511b6b9610a0519687b04bcb6d' },
-    { title: 'Building services', sub: 'BHAB, BHI Platform, Abbotsford Rd & Rail Centres', icon: '🏢',
-      url: 'https://queenslandrail.service-now.com/service_management?id=sc_cat_item&sys_id=311320bd1b4eb1501ee87510dc4bcbde' }
+    { title: 'Building & facilities faults', sub: 'Opens the QR Building Faults page', icon: '🔧',
+      url: 'https://queenslandrail.sharepoint.com/OurOrganisation/FCS/CS/Property/Pages/CF-Building-Faults.aspx' }
   ];
   // Safety-orange "Report a fault" buttons used on the home screens
   function faultBlock() {
@@ -1932,7 +1930,7 @@
   }
   function viewFaults() {
     render('<div class="page-title"><h4>Report a fault</h4></div>' +
-      '<p class="text-muted">Broken light, leaking tap, faulty door or anything else that needs fixing? Pick the location to open the QR facilities fault form.</p>' +
+      '<p class="text-muted">Broken light, leaking tap, faulty door or anything else that needs fixing? Tap below to open the QR Building Faults page.</p>' +
       FAULT_FORMS.map(function (f) {
         return '<a class="card mb-3 text-decoration-none fault-link" href="' + esc(f.url) + '" target="_blank" rel="noopener noreferrer" style="border:2px solid var(--qr-orange)">' +
           '<div class="card-body"><div class="d-flex align-items-center gap-3 mb-3">' +
