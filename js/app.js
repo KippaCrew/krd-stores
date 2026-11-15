@@ -11,6 +11,8 @@
   var APP_CHANGES = [
     'Uniform orders: when the uniform store sends your order to Kippa Ring, you\'ll get a notification as soon as it arrives',
     'See your uniform orders any time under Me → My uniform orders, and tap "I\'ve picked it up" when you collect it',
+    'Report a fault: Me → Report a fault opens the facilities fault form for the depot or office buildings',
+    'Suggestion box: share ideas or concerns anonymously under Me → Suggestion box. Your name is never saved with it',
     'Union chats: RTBU and AFULE members are added to their union\'s chat automatically'
   ];
   var $app = document.getElementById('app');
@@ -154,6 +156,8 @@
     megaphone: ico('<path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/>'),
     clip: ico('<path d="M21 11.5l-8.5 8.5a5 5 0 0 1-7-7L14 4.5a3.3 3.3 0 0 1 4.7 4.7L10.2 17.7a1.7 1.7 0 0 1-2.4-2.4L15.5 7.6"/>'),
     pdf: ico('<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M8 15h1.5a1.5 1.5 0 0 0 0-3H8v5"/><path d="M13 12v5h1a2 2 0 0 0 2-2v-1a2 2 0 0 0-2-2z"/>'),
+    wrench: ico('<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.8-3.8a6 6 0 0 1-7.9 7.9l-6.9 6.9a2.1 2.1 0 0 1-3-3l6.9-6.9a6 6 0 0 1 7.9-7.9z"/>'),
+    bulb: ico('<path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.3h6c0-1 .4-1.8 1-2.3A7 7 0 0 0 12 2z"/>'),
     shirt: ico('<path d="M8 3L3 6l2 4 3-1v12h8V9l3 1 2-4-5-3a4 4 0 0 1-8 0z"/>'),
     camera: ico('<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>')
   };
@@ -245,20 +249,20 @@
       { href: '#/stock', label: 'Stock', icon: I.stock, match: /^#\/(stock|import)/, dot: S.pulse.low },
       { href: '#/count', label: 'Count', icon: I.count, match: /^#\/count/ },
       { href: '#/messages', label: 'Messages', icon: I.chat, match: /^#\/(chat|messages|broadcast)/, dot: (S.pulse.unread || 0) + (S.pulse.broadcasts || 0) },
-      { href: '#/more', label: 'More', icon: I.more, match: /^#\/(more|receive|reports|tracks|staff|settings|share|me|history|whatsnew|uniforms|my-uniforms)/ }
+      { href: '#/more', label: 'More', icon: I.more, match: /^#\/(more|receive|reports|tracks|staff|settings|share|me|history|whatsnew|uniforms|my-uniforms|suggest|faults)/, dot: S.pulse.suggestions_new }
     ];
     if (isAdministrator()) return [
       { href: '#/', label: 'Home', icon: I.home, match: /^#\/?$/ },
       { href: '#/take', label: 'Take', icon: I.take, match: /^#\/take/ },
       { href: '#/count', label: 'Count', icon: I.count, match: /^#\/count/ },
       { href: '#/messages', label: 'Messages', icon: I.chat, match: /^#\/(chat|messages|broadcast)/, dot: (S.pulse.unread || 0) + (S.pulse.broadcasts || 0) },
-      { href: '#/more', label: 'More', icon: I.more, match: /^#\/(more|receive|staff|share|me|history|whatsnew|uniforms|my-uniforms)/ }
+      { href: '#/more', label: 'More', icon: I.more, match: /^#\/(more|receive|staff|share|me|history|whatsnew|uniforms|my-uniforms|suggest|faults)/ }
     ];
     return [
       { href: '#/take', label: 'Take', icon: I.take, match: /^#\/(take)?\/?$/ },
       { href: '#/history', label: 'My history', icon: I.history, match: /^#\/history/ },
       { href: '#/messages', label: 'Messages', icon: I.chat, match: /^#\/(chat|messages|broadcast)/, dot: (S.pulse.unread || 0) + (S.pulse.broadcasts || 0) },
-      { href: '#/me', label: 'Me', icon: I.me, match: /^#\/(me|whatsnew|my-uniforms)/, dot: S.pulse.uniforms_ready }
+      { href: '#/me', label: 'Me', icon: I.me, match: /^#\/(me|whatsnew|my-uniforms|suggest|faults)/, dot: S.pulse.uniforms_ready }
     ];
   }
   function renderNav() {
@@ -302,7 +306,10 @@
     [/^#\/staff$/, function () { return officeOnly(viewStaff); }],
     [/^#\/settings(?:#tracks)?$/, function () { return adminOnly(viewSettings); }],
     [/^#\/uniforms(\/done)?$/, function (m) { return officeOnly(function () { return viewUniforms(!!m[1]); }); }],
-    [/^#\/my-uniforms$/, function () { return viewMyUniforms(); }]
+    [/^#\/my-uniforms$/, function () { return viewMyUniforms(); }],
+    [/^#\/suggest$/, function () { return viewSuggest(); }],
+    [/^#\/faults$/, function () { return viewFaults(); }],
+    [/^#\/suggestions(\/done)?$/, function (m) { return adminOnly(function () { return viewSuggestions(!!m[1]); }); }]
   ];
   function adminOnly(fn) { if (!isAdmin()) { location.hash = isOffice() ? '#/' : '#/take'; return; } return fn(); }
   function officeOnly(fn) { if (!isOffice()) { location.hash = '#/take'; return; } return fn(); }
@@ -955,6 +962,8 @@
         (ios ? '<p class="mb-0">In <b>Safari</b>, tap the <b>Share</b> button (square with an arrow), then <b>Add to Home Screen</b>.</p>'
              : '<p class="mb-0">In <b>Chrome</b>, tap the <b>⋮</b> menu, then <b>Install app</b> or <b>Add to Home screen</b>.</p>') +
         '<p class="small text-muted mt-2 mb-0">It then opens like a normal app, and you stay signed in.</p></div></div>' +
+      '<a class="list-row mb-2" style="border:1px solid var(--qr-line);border-radius:.5rem" href="#/faults"><span style="width:26px;color:var(--qr-light-blue)">' + I.wrench + '</span><div class="grow"><div class="ttl">Report a fault</div><div class="sub">Facilities fault forms for depots and buildings</div></div><span class="text-muted">›</span></a>' +
+      (!isAdmin() ? '<a class="list-row mb-2" style="border:1px solid var(--qr-line);border-radius:.5rem" href="#/suggest"><span style="width:26px;color:var(--qr-light-blue)">' + I.bulb + '</span><div class="grow"><div class="ttl">Suggestion box</div><div class="sub">Share an idea or concern — anonymously</div></div><span class="text-muted">›</span></a>' : '') +
       '<a class="list-row mb-2" style="border:1px solid var(--qr-line);border-radius:.5rem" href="#/my-uniforms"><span style="width:26px;color:var(--qr-light-blue)">' + I.shirt + '</span><div class="grow"><div class="ttl">My uniform orders' + (S.pulse.uniforms_ready ? ' <span class="badge bg-danger">' + S.pulse.uniforms_ready + ' ready</span>' : '') + '</div><div class="sub">Orders sent to the depot for you</div></div><span class="text-muted">›</span></a>' +
       '<a class="list-row mb-3" style="border:1px solid var(--qr-line);border-radius:.5rem" href="#/whatsnew"><span style="width:26px;color:var(--qr-light-blue)">' + I.megaphone + '</span><div class="grow"><div class="ttl">What\'s New</div><div class="sub">Past updates and changes</div></div><span class="text-muted">›</span></a>' +
       (api.isDemo ? '<div class="card mb-3"><div class="card-header">Demo mode</div><div class="card-body"><p>This is a demo running only on this device. Nothing is shared.</p>' +
@@ -999,6 +1008,7 @@
         '<a class="tile' + (d.unexported ? ' is-warn' : '') + '" href="#/tracks"><div class="tile-n">' + d.unexported + '</div><div class="tile-l">To enter in TRACKS</div></a>' +
       '</div>' +
       (d.open_stocktake ? '<div class="alert alert-info d-flex align-items-center justify-content-between gap-2"><span>A stocktake is in progress.</span><a class="btn btn-sm btn-primary" href="#/count">Continue</a></div>' : '') +
+      (d.suggestions_new ? '<a href="#/suggestions" class="alert alert-info d-flex align-items-center gap-2 text-decoration-none" style="color:var(--qr-ink)"><span style="width:26px;flex:none">' + I.bulb + '</span><span class="flex-grow-1"><b>' + plural(d.suggestions_new, 'new suggestion') + '</b> in the suggestion box</span><span>›</span></a>' : '') +
       '<div class="action-grid mb-3">' +
         '<a class="action primary" href="#/take">' + I.take + 'Take items</a>' +
         '<a class="action" href="#/receive">' + I.truck + 'Receive delivery</a>' +
@@ -1085,6 +1095,7 @@
           row('#/broadcasts/new', I.megaphone, 'Send a Depot Announcement', 'A notice to everyone, with PDFs & photos') +
           row('#/receive', I.truck, 'Receive a delivery', 'Add stock that has arrived') +
           row('#/uniforms', I.shirt, 'Uniform collections', 'Orders from TRACKS coming to the depot') +
+          row('#/faults', I.wrench, 'Report a fault', 'Facilities fault forms') +
           row('#/count', I.count, 'Stocktake', 'Blind count of the store room') +
         '</div><div class="list mb-3">' +
           row('#/staff', I.users, 'Staff', 'Add people, reset PINs') +
@@ -1099,12 +1110,14 @@
         row('#/broadcasts', I.megaphone, 'TOI Broadcasts', 'Notices to everyone, with PDFs & photos') +
         row('#/receive', I.truck, 'Receive a delivery', 'Add stock that has arrived') +
         row('#/uniforms', I.shirt, 'Uniform collections', 'Orders from TRACKS coming to the depot') +
+        row('#/faults', I.wrench, 'Report a fault', 'Facilities fault forms') +
         row('#/tracks', I.export, 'TRACKS entry', 'Everything taken since you last entered it') +
         row('#/reports', I.chart, 'Reports', 'Usage by item and by person, CSV export') +
         row('#/stock', I.stock, 'Items & par levels', 'Add, edit, adjust stock') +
         row('#/import', I.upload, 'Import items', 'Paste your list from Excel') +
       '</div><div class="list mb-3">' +
         row('#/staff', I.users, 'Staff', 'Add people, reset PINs') +
+        row('#/suggestions', I.bulb, 'Suggestion box' + (S.pulse.suggestions_new ? ' <span class="badge bg-danger">' + S.pulse.suggestions_new + ' new</span>' : ''), 'Anonymous ideas and feedback from the crew') +
         row('#/whatsnew', I.megaphone, 'What\'s New', 'Post app updates & notes everyone sees once') +
         row('#/share', I.export, 'Share the app', 'Send the link to the crew') +
         row('#/settings', I.gear, 'Settings', 'Emails, notifications, TRACKS link') +
@@ -1893,6 +1906,120 @@
     if (off) off.addEventListener('click', async function () {
       if (!(await confirmSheet('Turn off the TRACKS link?', '<p>TRACKS won\'t be able to send uniform orders here. Tickets you already have stay.</p>', 'Turn off', true))) return;
       try { await call('tracks_link_set', { p_on: false }); paintTracksLink(); } catch (err) { errToast(err); }
+    });
+  }
+
+  // ------------------------------------------------------------------
+  //  REPORT A FAULT — opens QR's facilities fault forms (ServiceNow)
+  // ------------------------------------------------------------------
+  var FAULT_FORMS = [
+    { title: 'Yards & depots', sub: 'Including Kippa Ring Depot', icon: '🚉',
+      url: 'https://queenslandrail.service-now.com/service_management?id=sc_cat_item&sys_id=ecc0e3511b6b9610a0519687b04bcb6d' },
+    { title: 'BHAB, BHI Platform, Abbotsford Rd & Rail Centres', sub: 'Office and rail centre buildings', icon: '🏢',
+      url: 'https://queenslandrail.service-now.com/service_management?id=sc_cat_item&sys_id=311320bd1b4eb1501ee87510dc4bcbde' }
+  ];
+  function viewFaults() {
+    render('<div class="page-title"><h4>Report a fault</h4></div>' +
+      '<p class="text-muted">Broken light, leaking tap, faulty door or anything else that needs fixing? Pick the location to open the QR facilities fault form.</p>' +
+      FAULT_FORMS.map(function (f) {
+        return '<a class="card mb-3 text-decoration-none fault-link" href="' + esc(f.url) + '" target="_blank" rel="noopener noreferrer" style="border:2px solid var(--qr-light-blue)">' +
+          '<div class="card-body"><div class="d-flex align-items-center gap-3 mb-3">' +
+          '<span style="font-size:2rem;line-height:1">' + f.icon + '</span>' +
+          '<div><div class="fw-bold fs-5" style="color:var(--qr-ink);line-height:1.25">' + esc(f.title) + '</div><div class="small text-muted">' + esc(f.sub) + '</div></div></div>' +
+          '<span class="btn btn-primary w-100">Report a fault here ↗</span></div></a>';
+      }).join('') +
+      '<div class="alert alert-light border small"><b>Good to know</b><ul class="mb-0 ps-3 mt-1">' +
+        '<li>The form opens on the QR website. You may need to sign in with your QR account.</li>' +
+        '<li>Kippa Crew doesn\'t see or keep anything you put in the form.</li>' +
+        '<li>Anything unsafe? Report it to your TOI or supervisor straight away as well.</li></ul></div>');
+  }
+
+  // ------------------------------------------------------------------
+  //  SUGGESTION BOX (anonymous)
+  // ------------------------------------------------------------------
+  var SUG_CATS = [['stores', 'Store room'], ['rosters', 'Rosters & shifts'], ['facilities', 'Facilities'], ['safety', 'Safety'], ['communication', 'Communication'], ['other', 'Other']];
+  function sugCat(c) { var f = SUG_CATS.find(function (x) { return x[0] === c; }); return f ? f[1] : 'Other'; }
+  var SUG_STATUS = { 'new': ['New', 'bg-danger'], seen: ['Read', 'bg-secondary'], planned: ['Working on it', 'bg-warning'], done: ['Done', 'bg-success'], not_doing: ['Not going ahead', 'bg-dark'] };
+  function sugBadge(st) { var x = SUG_STATUS[st] || SUG_STATUS.seen; return '<span class="badge ' + x[1] + '">' + x[0] + '</span>'; }
+
+  async function viewSuggest() {
+    loading();
+    var shared = await call('shared_suggestions');
+    render('<div class="page-title"><h4>Suggestion box</h4></div>' +
+      '<div class="card mb-3" style="border:2px solid var(--qr-light-blue)"><div class="card-body">' +
+        '<div class="d-flex gap-2 align-items-start mb-3"><span style="font-size:1.6rem;line-height:1">🔒</span><div><b>Anonymous.</b> Your name is not saved with your suggestion, so no one — not even the managers — can see who sent it.' +
+        ' <span class="text-muted">Tip: leave out details only you would know if you want to stay anonymous.</span></div></div>' +
+        '<form id="sgForm">' +
+          '<label class="form-label">What\'s it about?</label><div class="d-flex flex-wrap gap-2 mb-3" id="sgCats">' +
+            SUG_CATS.map(function (c, i) { return '<button type="button" class="btn btn-sm ' + (c[0] === 'other' ? 'btn-primary' : 'btn-outline-primary') + '" data-cat="' + c[0] + '">' + c[1] + '</button>'; }).join('') + '</div>' +
+          '<label class="form-label" for="sgBody">Your suggestion</label>' +
+          '<textarea class="form-control" id="sgBody" rows="5" maxlength="1000" required placeholder="An idea, something that bugs you, something we could do better…"></textarea>' +
+          '<div class="d-flex justify-content-between align-items-center mt-2"><span class="small text-muted" id="sgCount">0 / 1000</span>' +
+          '<button class="btn btn-primary" id="sgSend">Send anonymously</button></div>' +
+        '</form></div></div>' +
+      '<div class="section-title">You said, we did</div>' +
+      (shared.length ? shared.map(function (x) {
+        return '<div class="card mb-2"><div class="card-body py-2">' +
+          '<div class="d-flex justify-content-between align-items-center mb-1"><span class="small text-muted">' + esc(sugCat(x.category)) + '</span>' + sugBadge(x.status) + '</div>' +
+          '<div class="mb-2" style="white-space:pre-wrap">“' + esc(x.body) + '”</div>' +
+          '<div class="p-2 small" style="background:#F7F6F2;border-left:4px solid var(--qr-light-blue);border-radius:.3rem;white-space:pre-wrap"><b>Reply:</b> ' + esc(x.reply) + '</div>' +
+          '</div></div>';
+      }).join('') : '<div class="empty">Nothing here yet. When a manager replies to a suggestion and shares it, it shows here.</div>'));
+    var cat = 'other', body = qs('#sgBody'), count = qs('#sgCount');
+    on($app, 'click', '[data-cat]', function (e, b) {
+      cat = b.getAttribute('data-cat');
+      qsa('[data-cat]').forEach(function (x) { x.className = 'btn btn-sm ' + (x === b ? 'btn-primary' : 'btn-outline-primary'); });
+    });
+    body.addEventListener('input', function () { count.textContent = body.value.length + ' / 1000'; });
+    qs('#sgForm').addEventListener('submit', async function (e) {
+      e.preventDefault();
+      var btn = qs('#sgSend');
+      if (body.value.trim().length < 3) { body.focus(); return; }
+      btn.disabled = true;
+      try {
+        await call('send_suggestion', { p_body: body.value.trim(), p_category: cat });
+        body.value = ''; count.textContent = '0 / 1000';
+        sheet({ title: 'Thanks — suggestion sent', body: '<p>It\'s gone into the suggestion box with no name on it.</p><p class="mb-0 text-muted small">If a manager replies and shares it, you\'ll see it under <b>You said, we did</b>.</p>',
+                foot: '<button class="btn btn-primary" data-close>OK</button>' });
+      } catch (err) { errToast(err); }
+      btn.disabled = false;
+    });
+  }
+
+  async function viewSuggestions(done) {
+    loading();
+    var d = await call('list_suggestions', { p_done: !!done });
+    if (d.new) { try { await call('seen_suggestions', null, { bg: true }); } catch (_) {} }
+    S.pulse.suggestions_new = 0; renderNav();
+    render('<div class="page-title"><h4>Suggestion box</h4></div>' +
+      '<div class="seg"><a href="#/suggestions" class="' + (done ? '' : 'active') + '">Open (' + d.open + ')</a><a href="#/suggestions/done" class="' + (done ? 'active' : '') + '">Closed</a></div>' +
+      '<p class="small text-muted">🔒 These are anonymous: the app doesn\'t record who sent them, so there\'s no way to reply to one person. Reply here and tick <b>Share with the crew</b> to show it to everyone under <b>You said, we did</b>.</p>' +
+      (d.items.length ? d.items.map(function (x) {
+        return '<div class="card mb-2" data-s="' + x.id + '"><div class="card-body py-2">' +
+          '<div class="d-flex justify-content-between align-items-center mb-1"><span class="small text-muted">' + esc(sugCat(x.category)) + ' · ' + esc(fmtDay(x.created_on)) + '</span>' + sugBadge(x.status) + '</div>' +
+          '<div class="mb-2 fs-6" style="white-space:pre-wrap">' + esc(x.body) + '</div>' +
+          '<details' + (x.reply ? ' open' : '') + '><summary class="small fw-bold" style="cursor:pointer;color:var(--qr-light-blue)">' + (x.reply ? 'Your reply' : 'Reply / update') + '</summary>' +
+            '<div class="row g-2 mt-1"><div class="col-12"><select class="form-select form-select-sm" data-st>' +
+              Object.keys(SUG_STATUS).filter(function (k) { return k !== 'new'; }).map(function (k) { return '<option value="' + k + '"' + (x.status === k || (x.status === 'new' && k === 'seen') ? ' selected' : '') + '>' + SUG_STATUS[k][0] + '</option>'; }).join('') +
+            '</select></div>' +
+            '<div class="col-12"><textarea class="form-control form-control-sm" rows="3" maxlength="1000" data-reply placeholder="What you\'re doing about it (optional)">' + esc(x.reply || '') + '</textarea></div>' +
+            '<div class="col-12 d-flex align-items-center gap-2"><div class="form-check form-switch mb-0 flex-grow-1"><input class="form-check-input" type="checkbox" role="switch" id="sh' + x.id + '" data-share' + (x.shared ? ' checked' : '') + '>' +
+              '<label class="form-check-label small" for="sh' + x.id + '">Share with the crew</label></div>' +
+              '<button class="btn btn-link btn-sm text-danger" data-del>Delete</button><button class="btn btn-primary btn-sm" data-save>Save</button></div></div>' +
+          '</details></div></div>';
+      }).join('') : '<div class="empty">' + (done ? 'Nothing closed yet.' : 'No suggestions yet. Let the crew know the box is there — try a TOI broadcast.') + '</div>'));
+    on($app, 'click', '[data-save]', async function (e, b) {
+      var c = b.closest('[data-s]');
+      b.disabled = true;
+      try {
+        await call('update_suggestion', { p_id: +c.getAttribute('data-s'), p_status: qs('[data-st]', c).value, p_reply: qs('[data-reply]', c).value.trim() || null, p_shared: qs('[data-share]', c).checked });
+        toast(qs('[data-share]', c).checked ? 'Saved and shared with the crew' : 'Saved'); viewSuggestions(done);
+      } catch (err) { b.disabled = false; errToast(err); }
+    });
+    on($app, 'click', '[data-del]', async function (e, b) {
+      var c = b.closest('[data-s]');
+      if (!(await confirmSheet('Delete this suggestion?', '<p>Use this for anything offensive or sent by mistake. It can\'t be undone.</p>', 'Delete', true))) return;
+      try { await call('delete_suggestion', { p_id: +c.getAttribute('data-s') }); toast('Deleted'); viewSuggestions(done); } catch (err) { errToast(err); }
     });
   }
 

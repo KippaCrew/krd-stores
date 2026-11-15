@@ -4,7 +4,7 @@
 (function (global) {
   'use strict';
 
-  var KEY = 'krd_demo_v8';
+  var KEY = 'krd_demo_v9';
   var memory = null;
   var fileMem = {};   // demo attachments live in memory only (phone storage is too small for PDFs)
   var imgMem = {};    // demo item photos, same reason
@@ -87,7 +87,13 @@
         { id: 3, order_number: 'ORD-2026-004866', person_name: 'Jordan Lee', staff_id: null, items: 2, depot: 'Kippa Ring', status: 'in_transit', source: 'tracks', note: null,
           tracks_updates: 1, created_at: new Date(t0 - 4 * 3600000).toISOString(), updated_at: new Date(t0 - 4 * 3600000).toISOString(), tracks_done: false }
       ],
-      nextU: 4, nameLinks: {}
+      nextU: 4, nameLinks: {},
+      suggestions: [
+        { id: 1, body: 'Could we get a second microwave in the crib room? There\'s a queue at every meal break.', category: 'facilities', created_on: new Date(t0 - 6 * 86400000).toISOString().slice(0, 10),
+          status: 'done', reply: 'Great idea — a second microwave is ordered and arriving next week.', shared: true, replied_on: new Date(t0 - 2 * 86400000).toISOString().slice(0, 10) },
+        { id: 2, body: 'Sunscreen keeps running out on weekends. Maybe keep a spare box in the TOI office?', category: 'stores', created_on: new Date(t0 - 86400000).toISOString().slice(0, 10), status: 'new', reply: null, shared: false, replied_on: null }
+      ],
+      nextSug: 3, sugLimits: {}
     };
   }
 
@@ -349,7 +355,8 @@
           .map(function (b) { return { id: b.id, title: b.title, at: b.published_at, who: staffName(db, b.sender_id), kind_label: kindLabel(b.kind) }; }),
         whats_new: pendingNotes(db, s).length,
         uniforms_ready: (db.uniforms || []).filter(function (u) { return u.staff_id === s.id && u.status === 'arrived'; }).length,
-        uniforms_open: isOfficeRole(s.role) ? uniOpen(db).length : 0 };
+        uniforms_open: isOfficeRole(s.role) ? uniOpen(db).length : 0,
+        suggestions_new: s.role === 'admin' ? (db.suggestions || []).filter(function (x) { return x.status === 'new'; }).length : 0 };
     },
     change_my_pin: function (db, a) {
       var s = auth(db, a.p_token);
@@ -412,7 +419,8 @@
         item_count: db.items.filter(function (i) { return i.active; }).length,
         staff_count: db.staff.filter(function (s) { return s.active; }).length,
         open_stocktake: open ? open.id : null,
-        uniforms_open: uniOpen(db).length
+        uniforms_open: uniOpen(db).length,
+        suggestions_new: db.suggestions.filter(function (x) { return x.status === 'new'; }).length
       };
     },
     save_item: function (db, a) {
@@ -858,6 +866,40 @@
       return uniInbound(db, 'dispatched', 'ORD-2026-' + String(4900 + db.nextU).padStart(6, '0'), parts.length > 1 ? parts.slice(1).join(' ') + ', ' + parts[0] : who.name,
                         'Kippa Ring', 1 + Math.floor(Math.random() * 4));
     },
+    send_suggestion: function (db, a) {
+      var s = auth(db, a.p_token), body = String(a.p_body || '').trim(), day = new Date().toISOString().slice(0, 10), cats = ['stores','rosters','facilities','safety','communication','other'];
+      if (body.length < 3) fail('Please write a little more.');
+      if (body.length > 1000) fail('Please keep it under 1000 characters.');
+      if (cats.indexOf(a.p_category || 'other') < 0) fail('Unknown category.');
+      var k = s.id + '|' + day; db.sugLimits[k] = (db.sugLimits[k] || 0) + 1;
+      if (db.sugLimits[k] > 5) fail('That\'s 5 suggestions today — thanks! Please send more tomorrow.');
+      db.suggestions.push({ id: db.nextSug++, body: body, category: a.p_category || 'other', created_on: day, status: 'new', reply: null, shared: false, replied_on: null });
+      return { ok: true };
+    },
+    shared_suggestions: function (db, a) {
+      auth(db, a.p_token);
+      return db.suggestions.filter(function (x) { return x.shared && x.reply; }).sort(function (x, y) { return String(y.replied_on).localeCompare(String(x.replied_on)) || y.id - x.id; })
+        .map(function (x) { return { id: x.id, body: x.body, category: x.category, status: x.status, reply: x.reply, created_on: x.created_on, replied_on: x.replied_on }; });
+    },
+    list_suggestions: function (db, a) {
+      auth(db, a.p_token, true);
+      var open = ['new', 'seen', 'planned'];
+      return { items: db.suggestions.filter(function (x) { return a.p_done ? open.indexOf(x.status) < 0 : open.indexOf(x.status) >= 0; }).sort(function (x, y) { return y.id - x.id; })
+                 .map(function (x) { return { id: x.id, body: x.body, category: x.category, status: x.status, reply: x.reply, shared: x.shared, created_on: x.created_on, replied_on: x.replied_on }; }),
+               'new': db.suggestions.filter(function (x) { return x.status === 'new'; }).length,
+               open: db.suggestions.filter(function (x) { return open.indexOf(x.status) >= 0; }).length };
+    },
+    update_suggestion: function (db, a) {
+      auth(db, a.p_token, true);
+      var x = db.suggestions.find(function (y) { return y.id === a.p_id; }), reply = String(a.p_reply || '').trim().slice(0, 1000) || null;
+      if (['new','seen','planned','done','not_doing'].indexOf(a.p_status) < 0) fail('Unknown status.');
+      if (a.p_shared && !reply) fail('Write a reply before sharing it with the crew.');
+      if (!x) fail('That suggestion no longer exists.');
+      if (reply !== x.reply) x.replied_on = new Date().toISOString().slice(0, 10);
+      x.status = a.p_status; x.reply = reply; x.shared = !!a.p_shared;
+    },
+    seen_suggestions: function (db, a) { auth(db, a.p_token, true); db.suggestions.forEach(function (x) { if (x.status === 'new') x.status = 'seen'; }); },
+    delete_suggestion: function (db, a) { auth(db, a.p_token, true); db.suggestions = db.suggestions.filter(function (x) { return x.id !== a.p_id; }); },
     send_message: function (db, a) {
       var s = auth(db, a.p_token), body = String(a.p_body || '').trim();
       if (!body) fail('Message is empty.');
