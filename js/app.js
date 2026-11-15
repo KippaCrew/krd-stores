@@ -11,7 +11,7 @@
   var APP_CHANGES = [
     'Uniform orders: when the uniform store sends your order to Kippa Ring, you\'ll get a notification as soon as it arrives',
     'See your uniform orders any time under Me → My uniform orders, and tap "I\'ve picked it up" when you collect it',
-    'Report a fault: Me → Report a fault opens the facilities fault form for the depot or office buildings',
+    'Report a fault: orange buttons on the home screen open the Facilities or Building services fault form',
     'Suggestion box: share ideas or concerns anonymously under Me → Suggestion box. Your name is never saved with it',
     'Union chats: RTBU and AFULE members are added to their union\'s chat automatically'
   ];
@@ -1917,9 +1917,9 @@
   //  REPORT A FAULT — opens QR's facilities fault forms (ServiceNow)
   // ------------------------------------------------------------------
   var FAULT_FORMS = [
-    { title: 'Yards & depots', sub: 'Including Kippa Ring Depot', icon: '🚉',
+    { title: 'Facilities', sub: 'Yards & depots, including Kippa Ring Depot', icon: '🚉',
       url: 'https://queenslandrail.service-now.com/service_management?id=sc_cat_item&sys_id=ecc0e3511b6b9610a0519687b04bcb6d' },
-    { title: 'BHAB, BHI Platform, Abbotsford Rd & Rail Centres', sub: 'Office and rail centre buildings', icon: '🏢',
+    { title: 'Building services', sub: 'BHAB, BHI Platform, Abbotsford Rd & Rail Centres', icon: '🏢',
       url: 'https://queenslandrail.service-now.com/service_management?id=sc_cat_item&sys_id=311320bd1b4eb1501ee87510dc4bcbde' }
   ];
   // Safety-orange "Report a fault" buttons used on the home screens
